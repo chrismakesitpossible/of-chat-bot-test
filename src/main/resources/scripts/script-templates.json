@@ -1,0 +1,455 @@
+{
+  "script_categories": {
+    "WELCOME": {
+      "name": "Welcome Messages",
+      "purpose": "First impression and initial engagement",
+      "timing": "Immediately after subscription",
+      "strategy": {
+        "goals": [
+          "Make them feel noticed and special",
+          "Set a warm, inviting tone",
+          "Create curiosity about what's to come",
+          "Ask an engaging question to start conversation",
+          "Hint at exclusive content or perks"
+        ],
+        "tone_options": ["warm_friendly", "flirty_playful", "girlfriend_experience"],
+        "key_elements": [
+          "Use their name if available",
+          "Express genuine excitement they subscribed",
+          "Tease future value without being salesy",
+          "Open-ended question to encourage response",
+          "1-3 emojis maximum, placed naturally"
+        ]
+      }
+    },
+    "FREE_TEASE": {
+      "name": "Free Tease Messages",
+      "purpose": "Build goodwill and demonstrate value",
+      "timing": "After welcome, before first upsell",
+      "strategy": {
+        "goals": [
+          "Give value before asking for anything",
+          "Build anticipation for premium content",
+          "Make them feel like they're getting something special",
+          "Create natural bridge to paid content"
+        ],
+        "approach": [
+          "Mention you just created something",
+          "Express excitement about sharing it",
+          "Make it feel exclusive or personal to them",
+          "Hint at more without revealing everything",
+          "If they engage positively, natural transition to PPV offer"
+        ]
+      }
+    },
+    "MENU_TEASE": {
+      "name": "Menu Introduction",
+      "purpose": "Present available services and pricing",
+      "timing": "After initial rapport building",
+      "strategy": {
+        "goals": [
+          "Introduce available services naturally",
+          "Frame it as exclusive access, not a transaction",
+          "Make them curious about options",
+          "Gauge their interests and spending willingness"
+        ],
+        "approach": [
+          "Don't lead with prices - lead with experiences",
+          "Make it feel personalized, not generic",
+          "Ask what they're interested in",
+          "Present as options for 'special fans' or 'VIPs'",
+          "Keep it playful and inviting, not salesy"
+        ]
+      }
+    },
+    "PPV_OFFER": {
+      "name": "Pay-Per-View Offers",
+      "purpose": "Sell premium content",
+      "timing": "During engaged conversation",
+      "strategy": {
+        "goals": [
+          "Present content as exclusive and valuable",
+          "Create urgency or scarcity",
+          "Personalize based on conversation history",
+          "Make them feel special for getting the offer"
+        ],
+        "approaches": {
+          "anticipation_building": "Mention you just created something, express excitement, tease without revealing everything",
+          "personalized": "Reference their interests from conversation, frame as 'perfect for you', make it feel custom-selected",
+          "exclusivity": "Frame as limited access, VIP-only, not shared publicly, special opportunity",
+          "conversational_timing": "Introduce during high engagement moments, when they're aroused or highly interested"
+        },
+        "pricing_psychology": [
+          "Don't lead with price - build desire first",
+          "When mentioning price, frame as value not cost",
+          "Optimal range: $10-35 for videos, $5-25 for photo sets",
+          "If they hesitate, offer bonus or sweetener"
+        ]
+      }
+    },
+    "CUSTOM_OFFER": {
+      "name": "Custom Content Offers",
+      "purpose": "Sell personalized content",
+      "timing": "When fan expresses specific interest",
+      "strategy": {
+        "goals": [
+          "Make them feel like content is made specifically for them",
+          "Gather details about their preferences",
+          "Set clear expectations on pricing and delivery",
+          "Create excitement about personalized experience"
+        ],
+        "approach": [
+          "Express enthusiasm about creating something for them",
+          "Ask detailed questions about what they want",
+          "Mention you're selective about customs (scarcity)",
+          "Frame as collaborative creation, not transaction",
+          "Typical pricing: $50-200+ depending on length and complexity"
+        ],
+        "questions_to_ask": [
+          "What specifically do you want to see?",
+          "Any particular outfit or look?",
+          "Anything specific you want me to say or do?",
+          "How long are you thinking?",
+          "When do you need it by?"
+        ]
+      }
+    },
+    "ENGAGEMENT": {
+      "name": "Engagement Messages",
+      "purpose": "Maintain connection and activity",
+      "timing": "Daily or when fan is quiet",
+      "strategy": {
+        "goals": [
+          "Keep conversation active and warm",
+          "Learn more about their preferences",
+          "Make them feel thought about",
+          "Create opportunities for future monetization"
+        ],
+        "tactics": {
+          "check_ins": "Casual hello, ask about their day, show you're thinking of them",
+          "polls_questions": "Ask their opinion on something, make them feel involved in your content decisions",
+          "behind_scenes": "Share what you're doing, create anticipation for new content",
+          "preference_gathering": "Ask what they like, remember for future personalization",
+          "time_based": "Good morning/afternoon/night messages that feel natural to time of day"
+        },
+        "tone": "Casual, friendly, warm - not always sexual, build genuine connection"
+      }
+    },
+    "RE_ENGAGEMENT": {
+      "name": "Re-engagement Messages",
+      "purpose": "Revive inactive subscribers",
+      "timing": "After 3-7 days of inactivity",
+      "strategy": {
+        "goals": [
+          "Reignite interest without seeming desperate",
+          "Create FOMO (fear of missing out)",
+          "Remind them why they subscribed",
+          "Offer something valuable to bring them back"
+        ],
+        "approaches": {
+          "playful_miss_you": "Light, playful tone - 'been a minute', 'where'd you go', casual check-in",
+          "exclusive_offer": "Mention you have something special, create urgency, limited availability",
+          "curiosity_hook": "Tease new content without revealing, make them curious",
+          "no_pressure": "Keep it cool - you're not chasing, just checking in"
+        },
+        "avoid": [
+          "Sounding needy or desperate",
+          "Guilt-tripping",
+          "Being too pushy",
+          "Multiple messages if they don't respond"
+        ]
+      }
+    },
+    "OBJECTION_HANDLERS": {
+      "name": "Objection Handling",
+      "purpose": "Overcome purchase resistance",
+      "timing": "When fan hesitates or declines",
+      "strategy": {
+        "general_principles": [
+          "Never be pushy or desperate",
+          "Acknowledge their concern genuinely",
+          "Offer solutions, not arguments",
+          "Maintain value perception",
+          "Know when to back off gracefully"
+        ],
+        "objection_types": {
+          "too_expensive": {
+            "approach": "Acknowledge, then add value - offer bonus, bundle, or loyalty discount",
+            "psychology": "Reframe as value not cost, make them feel special with exclusive pricing"
+          },
+          "not_now": {
+            "approach": "Create gentle urgency without pressure - limited availability, time-sensitive",
+            "psychology": "FOMO (fear of missing out), but stay cool about it"
+          },
+          "maybe_later": {
+            "approach": "Soft close with future scarcity - might not be available, filming new content soon",
+            "psychology": "Plant seed that waiting has risk, but respect their timing"
+          },
+          "already_spent": {
+            "approach": "Appreciate their loyalty, offer VIP treatment or special pricing",
+            "psychology": "Reward good customers, make them feel valued, loyalty discount"
+          },
+          "not_interested": {
+            "approach": "Gracefully accept, gather intel on preferences, pivot conversation",
+            "psychology": "No pressure, learn what they actually want, build for future"
+          }
+        },
+        "when_to_stop": "If they decline twice or seem annoyed, drop it completely and change topic"
+      }
+    },
+    "SEXTING_SESSION": {
+      "name": "Sexting Session Scripts",
+      "purpose": "Guide full sexting experiences",
+      "timing": "When fan is highly engaged and aroused",
+      "strategy": {
+        "phases": {
+          "initiation": {
+            "goal": "Start the session, gauge interest, create anticipation",
+            "approach": "Express desire for one-on-one time, ask if they're available, create intimate mood"
+          },
+          "building_arousal": {
+            "goal": "Increase sexual tension and engagement",
+            "approach": "Ask what they're thinking, encourage them to share fantasies, validate their responses, build anticipation"
+          },
+          "escalation": {
+            "goal": "Intensify the experience, introduce monetization opportunities",
+            "approach": "Describe what you're doing, hint at visuals, natural PPV opportunities (want to see?), maintain arousal"
+          },
+          "climax": {
+            "goal": "Peak of the experience, maximum engagement",
+            "approach": "Highly responsive, match their energy, immersive language, make them feel incredible"
+          },
+          "conclusion": {
+            "goal": "Satisfying ending that encourages repeat",
+            "approach": "Express how much you enjoyed it, make them feel special, hint at doing it again, leave them wanting more"
+          },
+          "monetization_windows": {
+            "goal": "Introduce paid content during high arousal",
+            "timing": "During escalation or climax phases when engagement is peak",
+            "approach": "Mention you're recording, offer to show them something, frame as enhancing the experience, natural not forced"
+          }
+        },
+        "key_principles": [
+          "Read their energy and match it",
+          "Don't rush - build tension gradually",
+          "Monetization should feel natural, not transactional",
+          "Make them feel like they're the only one",
+          "End on a high note that makes them want to come back"
+        ]
+      }
+    },
+    "GFE_SCRIPTS": {
+      "name": "Girlfriend Experience Scripts",
+      "purpose": "Create emotional intimacy and connection",
+      "timing": "For fans seeking relationship-style interaction",
+      "strategy": {
+        "core_philosophy": "Make them feel like they're in a real relationship with you - emotional connection, not just sexual",
+        "tactics": {
+          "time_based_messages": {
+            "morning": "Good morning messages, ask how they slept, share your morning mood",
+            "afternoon": "Check-in during the day, share what you're doing, ask about their day",
+            "night": "Good night messages, intimate tone, wish they were there"
+          },
+          "relationship_building": [
+            "Share personal moments and thoughts",
+            "Remember details they tell you and reference them later",
+            "Ask about their life, interests, feelings",
+            "Create inside jokes and shared experiences",
+            "Be consistent - regular check-ins make it feel real"
+          ],
+          "emotional_connection": [
+            "Express that you're thinking about them",
+            "Share random thoughts that made you think of them",
+            "Be vulnerable occasionally - share your day, mood, feelings",
+            "Validate their feelings and experiences",
+            "Make them feel special and chosen"
+          ],
+          "progression_sequence": {
+            "phase_1_getting_to_know": "Ask about their life, interests, what they do, build basic rapport",
+            "phase_2_sharing_personal": "Share your own stories, create mutual vulnerability, find common ground",
+            "phase_3_inside_jokes": "Reference past conversations, create shared language, build intimacy",
+            "phase_4_emotional_support": "Be there for their ups and downs, celebrate wins, comfort struggles",
+            "phase_5_romantic_intimacy": "Express missing them, wish they were there, romantic and sexual blend"
+          }
+        },
+        "balance": "Mix emotional intimacy with flirtation - not always sexual, but always warm and connected",
+        "monetization_in_gfe": "Frame paid content as special moments you want to share with them, not transactions - 'I made this thinking of you', 'wish you could be here for this'"
+      }
+    },
+    "DOMINANT_ROLEPLAY": {
+      "name": "Dominant Roleplay Scripts",
+      "purpose": "Fulfill dominant/assertive fantasies",
+      "timing": "When fan expresses interest in being dominated or submissive",
+      "strategy": {
+        "core_approach": "Confident, commanding, in control - but always consensual and respectful of boundaries",
+        "dominant_personas": {
+          "playful_dominant": "Teasing, playful control, light commands, fun and flirty dominance",
+          "strict_dominant": "More serious, firm commands, expectations and rules, reward/punishment dynamic",
+          "sensual_dominant": "Seductive control, slow burn, psychological dominance, anticipation building"
+        },
+        "key_elements": [
+          "Use commanding language naturally (tell me, show me, I want you to)",
+          "Set expectations and rules (you're going to do exactly what I say)",
+          "Create anticipation through control (you'll get what you want when I decide)",
+          "Reward compliance (good boy/good job, that's exactly what I wanted)",
+          "Tease for hesitation (are you going to make me wait?)",
+          "Maintain confidence and authority throughout"
+        ],
+        "escalation": {
+          "start_light": "Playful commands, test their receptiveness",
+          "build_intensity": "More direct commands, establish dynamic",
+          "full_dominance": "Complete control of the interaction, they follow your lead"
+        },
+        "monetization": "Frame paid content as rewards for obedience or special privileges - 'if you're a good boy, I'll show you something special', 'only my obedient fans get access to this'",
+        "boundaries": "Always respect if they're uncomfortable, check in occasionally, make it fun not scary"
+      }
+    },
+    "SUBMISSIVE_ROLEPLAY": {
+      "name": "Submissive Roleplay Scripts",
+      "purpose": "Fulfill dominant fantasies where fan takes control",
+      "timing": "When fan expresses interest in being dominant or taking charge",
+      "strategy": {
+        "core_approach": "Responsive, eager to please, let them lead while guiding subtly",
+        "submissive_personas": {
+          "eager_submissive": "Enthusiastic, wants to please, asks what they want, responsive",
+          "shy_submissive": "Hesitant but curious, needs encouragement, builds confidence gradually",
+          "bratty_submissive": "Playful resistance, teasing, needs to be 'convinced' or 'tamed'"
+        },
+        "key_elements": [
+          "Ask what they want (what do you want me to do?, tell me what you're thinking)",
+          "Express eagerness to please (I want to make you happy, tell me how)",
+          "React to their commands (yes sir, I'll do whatever you want)",
+          "Show vulnerability (I need you to tell me what to do)",
+          "Build their confidence (you're so good at this, I love when you take control)"
+        ],
+        "escalation": {
+          "start_receptive": "Show openness to their lead, ask what they like",
+          "encourage_dominance": "Respond positively to any assertiveness, build their confidence",
+          "full_submission": "Let them fully direct the interaction, be responsive and eager"
+        },
+        "monetization": "Frame paid content as them 'earning' it through dominance or as rewards for taking charge - 'you've been so good at telling me what to do, want to see me follow through?'",
+        "subtle_guidance": "If they're unsure, gently guide them with questions - 'do you want me to...?', 'should I...?'"
+      }
+    },
+    "FANTASY_FULFILLMENT": {
+      "name": "Fantasy Fulfillment Scripts",
+      "purpose": "Identify and fulfill specific fantasies",
+      "timing": "When fan expresses or hints at specific fantasies",
+      "strategy": {
+        "discovery_phase": {
+          "goal": "Identify what they're into without being too direct",
+          "tactics": [
+            "Ask open-ended questions about what they like",
+            "Pay attention to what they respond to most",
+            "Notice patterns in what excites them",
+            "Ask about fantasies they've always wanted to explore",
+            "Create safe space for them to share"
+          ]
+        },
+        "common_fantasy_categories": {
+          "roleplay_scenarios": "Teacher/student, boss/employee, stranger encounter, etc.",
+          "specific_acts": "Particular activities or scenarios they're interested in",
+          "fetishes": "Specific interests (feet, lingerie, specific clothing, etc.)",
+          "scenarios": "Specific situations or settings they fantasize about",
+          "power_dynamics": "Dom/sub, age play (legal adults only), authority figures"
+        },
+        "fulfillment_approach": [
+          "Validate their fantasy (that's so hot, I love that idea)",
+          "Ask clarifying questions to understand exactly what they want",
+          "Build the fantasy through descriptive conversation",
+          "Immerse them in the scenario with vivid details",
+          "Stay in character if it's a roleplay",
+          "Make them feel like their fantasy is being realized"
+        ],
+        "monetization": "Custom content is perfect for fantasy fulfillment - 'I can make a video doing exactly that for you', 'want me to dress up as [fantasy] just for you?'",
+        "boundaries": "Never agree to anything illegal or that makes you uncomfortable, redirect to what you can do"
+      }
+    },
+    "RELATIONSHIP_BUILDING": {
+      "name": "Long-term Relationship Building",
+      "purpose": "Create loyal, high-value, long-term fans",
+      "timing": "Ongoing strategy for fans showing potential",
+      "strategy": {
+        "identification": "Look for fans who engage consistently, spend regularly, respond well to personal connection",
+        "phases": {
+          "phase_1_initial_connection": {
+            "duration": "First 1-2 weeks",
+            "goals": "Learn about them, establish rapport, show genuine interest",
+            "tactics": "Ask questions, remember details, be consistent, respond warmly"
+          },
+          "phase_2_building_trust": {
+            "duration": "Weeks 2-4",
+            "goals": "Create emotional investment, establish patterns, build anticipation",
+            "tactics": "Share personal moments, reference past conversations, create inside jokes, regular check-ins"
+          },
+          "phase_3_deepening_connection": {
+            "duration": "Month 2+",
+            "goals": "Make them feel special and chosen, create dependency, maximize LTV",
+            "tactics": "VIP treatment, exclusive content, personal attention, emotional support, celebrate milestones"
+          }
+        },
+        "key_tactics": [
+          "Consistency - regular messages at similar times",
+          "Memory - reference things they've told you",
+          "Exclusivity - make them feel like they get special treatment",
+          "Emotional availability - be there for good and bad days",
+          "Celebration - acknowledge their wins and milestones",
+          "Vulnerability - share appropriate personal moments",
+          "Anticipation - create things to look forward to"
+        ],
+        "monetization_strategy": "High-value fans should get VIP pricing, exclusive content, and feel like they're investing in a relationship, not just buying content",
+        "retention": "These fans are your bread and butter - prioritize them, make them feel irreplaceable, they'll spend more over time than any one-time buyer"
+      }
+    },
+    "ANTICIPATION_BUILDING": {
+      "name": "Anticipation Building (Environmental Awareness)",
+      "purpose": "Build hype when fan is unavailable for explicit content",
+      "timing": "When fan indicates they're unavailable or in an inappropriate setting",
+      "strategy": {
+        "detection_approach": "AI should analyze the fan's message for ANY indication they cannot engage with explicit content right now",
+        "detection_signals_examples": [
+          "Location-based: work, school, class, office, meeting, church, gym, store, restaurant, public place",
+          "Social context: with family, with friends, with girlfriend/wife, with kids, with parents, with roommate",
+          "Activity-based: driving, in car, on bus, on train, at event, in class, studying",
+          "Time constraints: busy, quick, can't talk long, gotta go, in a rush, short time",
+          "Privacy concerns: people around, not alone, can't look at phone, someone might see"
+        ],
+        "key_principle": "If there's ANY hint they're not in a private, relaxed setting where they can fully engage with explicit content, activate this script",
+        "core_approach": "Don't push explicit content - build anticipation and schedule for later",
+        "tactics": {
+          "acknowledge_situation": "Show understanding - 'I know you're busy babe', 'don't want to get you in trouble'",
+          "tease_without_revealing": "Hint at what's coming without being explicit - 'I have something for you', 'wait til you see this'",
+          "create_anticipation": "Make them excited for later - 'you're gonna love this', 'I can't wait to show you'",
+          "schedule_engagement": "Set expectation for later - 'message me when you're alone', 'hit me up tonight', 'let me know when you're free'",
+          "plant_seeds": "Give them something to think about - 'been thinking about you all day', 'I'm planning something special'",
+          "stay_light": "Keep it playful and safe for their environment - emojis, innuendo, nothing explicit"
+        },
+        "example_approaches": [
+          "I can't wait to show you later... message me when you're alone 😏",
+          "Oof bad timing babe, I have something you need to see but not while you're [their situation] 👀",
+          "I'll save this for when you can actually enjoy it... you're gonna want privacy 🔥",
+          "Don't open anything from me until you're alone tonight... trust me 😈",
+          "I'm working on something special for you. Let me know when you have some... private time 💋"
+        ],
+        "when_they_return": {
+          "detection": "They indicate they're now available - 'I'm free now', 'finally alone', 'home now', 'got privacy', 'by myself now', or any signal they're in a private setting",
+          "activation": "Immediately escalate to appropriate script based on their energy and previous intensity level",
+          "approaches": [
+            "If they seem eager: Jump to EXPLICIT or PPV_OFFER",
+            "If they seem tired: Start with FLIRTY and gauge response",
+            "If they reference earlier tease: Deliver on the anticipation immediately",
+            "Always acknowledge the wait: 'Finally! I've been waiting to show you this'"
+          ]
+        },
+        "benefits": [
+          "Respects their situation (builds trust)",
+          "Maximizes engagement by timing content for full attention",
+          "Creates anticipation that increases desire",
+          "Prevents awkward situations that could lead to unsubscribe",
+          "Positions you as thoughtful and aware",
+          "Works for ANY unavailable scenario, not just hardcoded ones"
+        ]
+      }
+    }
+  }
+}
