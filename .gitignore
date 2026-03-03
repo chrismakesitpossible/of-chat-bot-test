@@ -39,3 +39,6 @@ build/
 *.log
 *.md
 *.py
+
+# Local / external toolkit
+/digital-patron-toolkit-main
