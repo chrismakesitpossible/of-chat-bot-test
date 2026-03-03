@@ -66,10 +66,6 @@ public class FanService {
         return fanRepository.findByOnlyfansUsername(onlyfansUsername);
     }
 
-    public Optional<Fan> findByOnlyfansUsername(String onlyfansUsername) {
-        return fanRepository.findByOnlyfansUsername(onlyfansUsername);
-    }
-
     public List<Fan> findInactiveFans(LocalDateTime inactiveSince) {
         return fanRepository.findByLastUpdatedBeforeAndOnlyfansUserIdIsNotNull(inactiveSince);
     }

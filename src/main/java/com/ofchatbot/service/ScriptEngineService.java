@@ -144,14 +144,32 @@ public class ScriptEngineService {
             return false;
         }
 
-        String lowerMessage = fanMessage.toLowerCase();
-        boolean hasInterestSignals = lowerMessage.matches(".*(want|show|see|more|custom|video|photo|content).*");
-        boolean isHighlyEngaged = engagementLevel >= 7;
-        boolean isArousedState = state.getCurrentState().equals("EXPLICIT") ||
-                                 state.getCurrentState().equals("SEXTING_SESSION");
-
-        return (hasInterestSignals && engagementLevel >= 5) ||
-               (isHighlyEngaged && isArousedState);
+        // Use AI to detect interest signals instead of hardcoded patterns
+        String analysisPrompt = String.format(
+            "Analyze this fan message for interest signals in OnlyFans context.\n\n" +
+            "Message: \"%s\"\n\n" +
+            "Recent message count: %d\n\n" +
+            "Determine if the message shows:\n" +
+            "1. Interest in specific content types\n" +
+            "2. Desire for more exclusive content\n" +
+            "3. Engagement with topics beyond casual chat\n\n" +
+            "Return ONLY: true or false",
+            fanMessage, 0);
+        
+        try {
+            String aiResult = anthropicService.generateResponse(
+                "You are an interest signal detector. Analyze messages and return only 'true' or 'false'.",
+                analysisPrompt,
+                null
+            );
+            
+            String cleanResult = aiResult.toLowerCase().trim();
+            return cleanResult.contains("true") && !cleanResult.contains("false");
+            
+        } catch (Exception e) {
+            logger.error("Failed to analyze interest signals with AI", e);
+            return false;
+        }
     }
 
     private String determineNextState(ConversationState state, String emotion, int engagementLevel) {
@@ -210,6 +228,11 @@ public class ScriptEngineService {
     }
 
     public String selectScriptCategory(ConversationState state, String analysisJson) {
+        return selectScriptCategory(state, analysisJson, null);
+    }
+
+    /** Use recentMessages to avoid WELCOME when there is clear conversation history (e.g. state was reset but fan already chatted). */
+    public String selectScriptCategory(ConversationState state, String analysisJson, List<Message> recentMessages) {
             try {
                 JsonNode analysis = objectMapper.readTree(analysisJson);
                 boolean isMonetizationWindow = analysis.get("is_monetization_window").asBoolean();
@@ -218,6 +241,11 @@ public class ScriptEngineService {
                 boolean isReturning = analysis.get("is_returning").asBoolean();
 
                 if (state.getLastScriptCategory() == null) {
+                    // Only use WELCOME for true first contact. If we have recent back-and-forth, stay in flow (ENGAGEMENT).
+                    if (recentMessages != null && recentMessages.size() >= 4) {
+                        logger.info("lastScriptCategory was null but {} recent messages present; using ENGAGEMENT instead of WELCOME to preserve context", recentMessages.size());
+                        return "ENGAGEMENT";
+                    }
                     return "WELCOME";
                 }
 
@@ -280,11 +308,21 @@ public class ScriptEngineService {
                     return "SEXTING_SESSION";
                 }
 
-                Duration timeSinceLastEngagement = Duration.between(
-                    state.getLastEngagementTime(), 
-                    LocalDateTime.now()
-                );
+                Duration timeSinceLastEngagement = state.getLastEngagementTime() != null
+                    ? Duration.between(state.getLastEngagementTime(), LocalDateTime.now())
+                    : Duration.ofHours(0);
                 if (timeSinceLastEngagement.toHours() > 48) {
+                    // Don't use RE_ENGAGEMENT if we have an active thread (recent bot + fan messages); fan may be replying to our last message.
+                    if (recentMessages != null && recentMessages.size() >= 4) {
+                        long botInLastHour = recentMessages.stream()
+                            .filter(m -> "bot".equals(m.getRole()))
+                            .filter(m -> m.getTimestamp() != null && Duration.between(m.getTimestamp(), LocalDateTime.now()).toHours() <= 1)
+                            .count();
+                        if (botInLastHour >= 1) {
+                            logger.info("48h passed but recent bot message in thread; using ENGAGEMENT instead of RE_ENGAGEMENT");
+                            return "ENGAGEMENT";
+                        }
+                    }
                     return "RE_ENGAGEMENT";
                 }
 

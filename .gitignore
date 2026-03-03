@@ -31,3 +31,11 @@ build/
 
 ### VS Code ###
 .vscode/
+
+# Scripts, logs, docs, data
+*.sh
+*.txt
+*.sql
+*.log
+*.md
+*.py

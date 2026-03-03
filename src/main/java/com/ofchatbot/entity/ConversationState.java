@@ -49,6 +49,10 @@ public class ConversationState {
 
     private LocalDateTime anticipationSetAt;
 
+    private Integer messageCount;
+
+    private String currentPhase;
+
     @Column(nullable = false)
     private LocalDateTime createdAt;
 
@@ -216,5 +220,21 @@ public class ConversationState {
 
     public void setUpdatedAt(LocalDateTime updatedAt) {
         this.updatedAt = updatedAt;
+    }
+
+    public Integer getMessageCount() {
+        return messageCount;
+    }
+
+    public void setMessageCount(Integer messageCount) {
+        this.messageCount = messageCount;
+    }
+
+    public String getCurrentPhase() {
+        return currentPhase;
+    }
+
+    public void setCurrentPhase(String currentPhase) {
+        this.currentPhase = currentPhase;
     }
 }

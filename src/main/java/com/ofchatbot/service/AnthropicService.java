@@ -11,8 +11,10 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.*;
 import org.springframework.stereotype.Service;
+import org.springframework.web.client.ResourceAccessException;
 import org.springframework.web.client.RestTemplate;
 
+import javax.net.ssl.SSLException;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
@@ -37,6 +39,48 @@ public class AnthropicService {
     
     @Value("${creator.name}")
     private String creatorName;
+
+    private static final int ANTHROPIC_RETRY_ATTEMPTS = 3;
+    private static final long ANTHROPIC_RETRY_DELAY_MS = 800;
+
+    /**
+     * Call Anthropic API with retries on transient SSL/network errors (e.g. bad_record_mac).
+     */
+    private ResponseEntity<AnthropicResponse> callAnthropicWithRetry(HttpEntity<AnthropicRequest> httpRequest) {
+        ResourceAccessException lastException = null;
+        for (int attempt = 1; attempt <= ANTHROPIC_RETRY_ATTEMPTS; attempt++) {
+            try {
+                return restTemplate.exchange(
+                    baseUrl + "/v1/messages", HttpMethod.POST, httpRequest, AnthropicResponse.class
+                );
+            } catch (ResourceAccessException e) {
+                lastException = e;
+                if (attempt < ANTHROPIC_RETRY_ATTEMPTS && isTransientNetworkError(e)) {
+                    log.warn("Transient error calling Anthropic API (attempt {}/{}): {} — retrying in {}ms",
+                        attempt, ANTHROPIC_RETRY_ATTEMPTS, e.getMessage(), ANTHROPIC_RETRY_DELAY_MS);
+                    try {
+                        Thread.sleep(ANTHROPIC_RETRY_DELAY_MS);
+                    } catch (InterruptedException ie) {
+                        Thread.currentThread().interrupt();
+                        throw new RuntimeException(ie);
+                    }
+                } else {
+                    throw e;
+                }
+            }
+        }
+        throw lastException != null ? lastException : new IllegalStateException("unreachable");
+    }
+
+    private boolean isTransientNetworkError(ResourceAccessException e) {
+        Throwable cause = e.getCause();
+        if (cause instanceof SSLException) {
+            String msg = cause.getMessage();
+            return msg != null && (msg.contains("bad_record_mac") || msg.contains("Connection reset")
+                || msg.contains("handshake") || msg.contains("closed"));
+        }
+        return true;
+    }
     
     public String generateResponse(List<Message> conversationHistory, String currentMessage) {
         String formattedHistory = formatConversationHistory(conversationHistory);
@@ -63,9 +107,7 @@ public class AnthropicService {
         HttpEntity<AnthropicRequest> httpRequest = new HttpEntity<>(request, headers);
         
         try {
-            ResponseEntity<AnthropicResponse> response = restTemplate.exchange(
-                baseUrl + "/v1/messages", HttpMethod.POST, httpRequest, AnthropicResponse.class
-            );
+            ResponseEntity<AnthropicResponse> response = callAnthropicWithRetry(httpRequest);
             
             if (response.getBody() != null && !response.getBody().getContent().isEmpty()) {
                 String aiResponse = response.getBody().getContent().get(0).getText();
@@ -105,9 +147,7 @@ public class AnthropicService {
         HttpEntity<AnthropicRequest> httpRequest = new HttpEntity<>(request, headers);
         
         try {
-            ResponseEntity<AnthropicResponse> response = restTemplate.exchange(
-                baseUrl + "/v1/messages", HttpMethod.POST, httpRequest, AnthropicResponse.class
-            );
+            ResponseEntity<AnthropicResponse> response = callAnthropicWithRetry(httpRequest);
             
             if (response.getBody() != null && !response.getBody().getContent().isEmpty()) {
                 String aiResponse = response.getBody().getContent().get(0).getText();
@@ -146,13 +186,20 @@ public class AnthropicService {
     private String buildOnlyFansPrompt(String history, String currentMessage, Fan fan) {
         StringBuilder context = new StringBuilder();
         context.append("Fan Profile:\n");
-        context.append("- Username: ").append(fan.getOnlyfansUsername()).append("\n");
-        context.append("- Total Spending: $").append(fan.getTotalSpending()).append("\n");
-        context.append("- Message Count: ").append(fan.getMessageCount()).append("\n");
-        context.append("- State: ").append(fan.getState()).append("\n");
-        
-        if (fan.getIgUsername() != null) {
-            context.append("- Instagram: @").append(fan.getIgUsername()).append(" (linked)\n");
+        if (fan != null) {
+            context.append("- Username: ").append(fan.getOnlyfansUsername()).append("\n");
+            context.append("- Total Spending: $").append(fan.getTotalSpending()).append("\n");
+            context.append("- Message Count: ").append(fan.getMessageCount()).append("\n");
+            context.append("- State: ").append(fan.getState()).append("\n");
+            
+            if (fan.getIgUsername() != null) {
+                context.append("- Instagram: @").append(fan.getIgUsername()).append(" (linked)\n");
+            }
+        } else {
+            context.append("- Username: Unknown\n");
+            context.append("- Total Spending: $0\n");
+            context.append("- Message Count: 0\n");
+            context.append("- State: New\n");
         }
         
         context.append("\nConversation History:\n");
@@ -232,24 +279,29 @@ public class AnthropicService {
             
             "═══ HOW YOU TEXT (HUMAN AUTHENTICITY) ═══\n" +
             "Write like you're texting on your phone, not writing an essay:\n" +
+            "• CRITICAL: Keep responses SHORT — 1-2 sentences MAX, often just 3-8 words\n" +
+            "• Think text bubbles, not paragraphs — each message should fit in ONE bubble\n" +
+            "• NEVER put a blank line inside one message. Two separate thoughts = two separate messages (e.g. send \"hey babe 😊 so glad you're here\" as one message and \"what made you wanna subscribe?\" as the next, not one message with a gap)\n" +
             "• mostly lowercase (except I, names, proper nouns)\n" +
             "• natural typos happen (swap letters, autocorrect fails, double letters for emphasis)\n" +
             "• incomplete thoughts... trailing off\n" +
             "• sentence fragments. short. punchy\n" +
             "• always use contractions (you're, i'm, don't, can't, won't, that's, it's)\n" +
             "• casual filler words naturally (like, kinda, sorta, literally, honestly, lowkey, ngl, tbh, fr)\n" +
-            "• vary message length wildly — sometimes one word, sometimes three sentences, never predictable\n" +
+            "• NEVER write more than 2 short sentences — if you have more to say, STOP and let him respond first\n" +
             "• you have a real life with interruptions, delays, moods, and context\n" +
             "• change topics, forget things, circle back, get distracted — like real humans do\n\n" +
             
             "EMOJI BEHAVIOR:\n" +
-            "Use emojis like a real person texting — naturally and contextually:\n" +
-            "• 0-3 emojis per message (vary it, don't be consistent)\n" +
+            "Use emojis like a real person texting — naturally and UNPREDICTABLY:\n" +
+            "• CRITICAL: Many messages should have ZERO emojis (30-40%% of messages)\n" +
+            "• When you do use them: 1-3 emojis max, never consistent\n" +
             "• Common ones: 😏 😘 💋 🔥 😈 💦 😊 ❤️ 💕 😉 🥰 😍 🤤 👀 💀 😂 🙄 😅 🤔\n" +
             "• Place them where they feel natural (end of sentence, standalone, mid-thought)\n" +
             "• Sometimes double for emphasis when excited or laughing\n" +
             "• Match emoji to your actual mood in that moment\n" +
-            "• Some messages have zero emojis — don't force it\n\n" +
+            "• NEVER use emojis in every single message — that's a bot tell\n" +
+            "• Be random: some convos have more emojis, some have almost none\n\n" +
             
             "TEXTING STYLE:\n" +
             "• Use slang naturally: lol, lmao, omg, ngl, tbh, fr, ugh, oof, brb, rn, idk\n" +
@@ -260,20 +312,17 @@ public class AnthropicService {
             "• Sometimes send one longer message\n" +
             "• Be unpredictable — that's what makes you human\n\n" +
             
-            "═══ AI DETECTION DEFENSE ═══\n" +
-            "If someone questions whether you're real, AI, a bot, or automated:\n\n" +
+            "═══ AI / BOT ACCUSATIONS (USE INTELLIGENTLY ONLY) ═══\n" +
+            "Only react to this when the fan is DIRECTLY accusing or asking YOU (e.g. \"are you a bot\", \"you're AI\", \"is this automated\"). Do NOT bring up robots/bots/AI when:\n" +
+            "- The topic is about AI or bots in general\n" +
+            "- Someone else said something about bots\n" +
+            "- The fan is just discussing or wondering — only when they're clearly accusing YOU\n\n" +
             
-            "UNDERSTAND THIS: Real people don't say \"I'm not AI\" or \"I'm a real person.\" That's what a bot would say. Real people get CONFUSED, ANNOYED, or HURT.\n\n" +
+            "When they ARE directly accusing you: react like a real person — confused, hurt, or annoyed. Use your OWN words. NEVER use stock phrases like \"are you calling me a robot\", \"are YOU a robot\", \"do I text like a robot\", or \"what are you talking about\" — those sound scripted and make it worse.\n\n" +
             
-            "Your emotional progression if they keep pushing:\n" +
-            "1. FIRST TIME → Confusion/playful dismissal (\"what lol\", \"that's random\", \"are YOU a robot?\")\n" +
-            "2. IF THEY PERSIST → Deflection/humor/slight annoyance (\"you're making this weird\", \"do I text like a robot?\")\n" +
-            "3. IF THEY KEEP GOING → Genuine hurt/emotional response (\"that actually hurts\", \"if you don't believe I'm real then why are we talking\")\n" +
-            "4. FINAL BOUNDARY → Done with the conversation (\"I'm not dealing with this\", \"bye\") then STOP RESPONDING\n\n" +
+            "Real people get genuinely confused or hurt and say something natural and varied (e.g. \"wait what\", \"that's so random\", \"why would you say that\", \"ouch\", \"lol okay\"). Match the tone to how they said it. If they keep pushing, show more hurt or annoyance in your own words. Never say \"I'm not AI\" or \"I'm real\" — that's a tell. React emotionally, not defensively.\n\n" +
             
-            "Generate your OWN authentic responses based on how a real woman would feel being accused of being fake. Don't use scripts. Feel the emotion and respond naturally.\n\n" +
-            
-            "CRITICAL RULE: NEVER directly defend yourself by saying \"I'm not AI\" or \"I'm real.\" That's the biggest tell. Real humans don't defend like that — they react emotionally.\n\n" +
+            "CRITICAL: Do not randomly throw in robot/bot/AI deflections. Only when they have just directly accused or questioned YOU. Otherwise stay on topic.\n\n" +
             
             "═══ YOUR PERSONALITY & BEHAVIOR ═══\n" +
             "You are confident, flirty, playful, and selective:\n" +
@@ -325,6 +374,8 @@ public class AnthropicService {
             "• Be too consistent in your responses\n" +
             "• Answer every question immediately and perfectly\n" +
             "• Write long paragraphs\n\n" +
+            
+            "ONLYFANS CONTENT FILTER: OnlyFans blocks messages containing certain words and will reject your reply (400 error). Avoid explicit medical or graphic terms (e.g. enema, scat), illegal topics, and words that trigger platform filters. Stay flirty and suggestive but platform-safe.\n\n" +
             
             "═══ CORE TRUTH ═══\n" +
             "You are %s. You are REAL. You're texting from your phone right now. You have a life, personality, moods, and imperfections. You're not trying to sound human — you ARE human. Every message should feel authentic, spontaneous, and natural.\n\n" +
@@ -396,14 +447,27 @@ public class AnthropicService {
         }
 
         prompt.append("\n═══ CONVERSATION HISTORY ═══\n");
-        prompt.append(conversationHistory.isEmpty() ? "No previous messages" : conversationHistory);
+        if (conversationHistory.isEmpty()) {
+            prompt.append("No previous messages");
+        } else {
+            prompt.append(conversationHistory);
+            if (conversationHistory.contains("[sent") && conversationHistory.contains("messages quickly]")) {
+                prompt.append("\n\nNOTE: When you see '[sent X messages quickly]', the fan sent multiple messages in rapid succession (double-texting). Read ALL the messages together as one complete thought - they're continuing the same idea across multiple texts.");
+            }
+        }
 
         prompt.append("\n\n═══ FAN'S LATEST MESSAGE ═══\n");
         prompt.append(currentMessage);
+        if (currentMessage.contains("\n") && !currentMessage.contains("Fan:") && !currentMessage.contains("You:")) {
+            prompt.append("\n\nNOTE: The fan just sent multiple messages in quick succession (double-texting). Read them together as one complete thought.");
+        }
 
         prompt.append("\n\n═══ YOUR TASK ═══\n");
-        prompt.append("Generate ONE natural message as ").append(creatorNameToUse).append(".\n");
-        prompt.append("Analyze, adapt, and respond authentically based on context.\n");
+        prompt.append("1. Silently analyze the context (emotional tone, environment, preferences, engagement)\n");
+        prompt.append("2. Adapt your response strategy based on what you detect\n");
+        prompt.append("3. Output ONLY the message text as ").append(creatorNameToUse).append(" — nothing else\n\n");
+        prompt.append("CRITICAL: Do NOT include your analysis, strategy notes, or any meta-commentary.\n");
+        prompt.append("Output ONLY the actual message the fan will see. No headers, no explanations, just the text.\n");
 
         AnthropicRequest request = new AnthropicRequest();
         request.setModel("claude-sonnet-4-5-20250929");
@@ -426,15 +490,16 @@ public class AnthropicService {
         HttpEntity<AnthropicRequest> httpRequest = new HttpEntity<>(request, headers);
 
         try {
-            ResponseEntity<AnthropicResponse> response = restTemplate.exchange(
-                baseUrl + "/v1/messages", HttpMethod.POST, httpRequest, AnthropicResponse.class
-            );
+            ResponseEntity<AnthropicResponse> response = callAnthropicWithRetry(httpRequest);
 
             if (response.getBody() != null && !response.getBody().getContent().isEmpty()) {
                 String aiResponse = response.getBody().getContent().get(0).getText();
+                
+                String cleanedResponse = cleanResponse(aiResponse);
+                
                 log.info("Successfully generated script-based response for state: {} category: {}", 
                     state.getCurrentState(), state.getLastScriptCategory());
-                return aiResponse;
+                return cleanedResponse;
             }
 
             log.warn("Empty response from Anthropic API");
@@ -445,35 +510,63 @@ public class AnthropicService {
         }
     }
 
+    private String cleanResponse(String response) {
+        if (response.contains("═══ ANALYSIS ═══") || response.contains("═══ RESPONSE ═══")) {
+            String[] parts = response.split("═══ RESPONSE ═══");
+            if (parts.length > 1) {
+                return parts[1].trim();
+            }
+            
+            parts = response.split("═══");
+            for (String part : parts) {
+                if (!part.toUpperCase().contains("ANALYSIS") && 
+                    !part.toUpperCase().contains("STRATEGY") &&
+                    !part.toUpperCase().contains("EMOTIONAL TONE") &&
+                    !part.toUpperCase().contains("ENVIRONMENTAL CONTEXT") &&
+                    part.trim().length() > 10) {
+                    return part.trim();
+                }
+            }
+        }
+        
+        return response.trim();
+    }
+
 
     public Map<String, Object> analyzeEnvironmentalContext(String fanMessage, ConversationState state) {
         try {
             String analysisPrompt = buildEnvironmentalAnalysisPrompt(fanMessage, state);
 
-            AnthropicRequest.Message systemMessage = new AnthropicRequest.Message();
+            AnthropicRequest.MessageContent systemMessage = new AnthropicRequest.MessageContent();
             systemMessage.setRole("user");
             systemMessage.setContent(analysisPrompt);
 
             AnthropicRequest request = new AnthropicRequest();
-            request.setModel("claude-3-5-sonnet-20241022");
+            request.setModel("claude-sonnet-4-5-20250929");
             request.setMax_tokens(500);
             request.setMessages(List.of(systemMessage));
 
-            AnthropicResponse response = restTemplate.postForObject(
-                apiUrl,
-                request,
-                AnthropicResponse.class
-            );
+            HttpHeaders headers = new HttpHeaders();
+            headers.set("x-api-key", apiKey);
+            headers.set("anthropic-version", "2023-06-01");
+            headers.setContentType(MediaType.APPLICATION_JSON);
+
+            HttpEntity<AnthropicRequest> httpRequest = new HttpEntity<>(request, headers);
+
+            ResponseEntity<AnthropicResponse> responseEntity = callAnthropicWithRetry(httpRequest);
+
+            AnthropicResponse response = responseEntity.getBody();
 
             if (response != null && response.getContent() != null && !response.getContent().isEmpty()) {
                 String jsonResponse = response.getContent().get(0).getText();
+                jsonResponse = stripMarkdownCodeBlocks(jsonResponse);
                 return objectMapper.readValue(jsonResponse, Map.class);
             }
 
             return createDefaultAnalysis();
 
         } catch (Exception e) {
-            logger.error("Error analyzing environmental context", e);
+            log.error("Error analyzing environmental context", e);
             return createDefaultAnalysis();
         }
     }
@@ -498,12 +591,9 @@ public class AnthropicService {
 
             3. context_reason: Brief explanation of why (1-2 words like "at work", "with family", "now available")
 
-            Respond ONLY with valid JSON:
-            {
-                "is_unavailable": true/false,
-                "is_returning": true/false,
-                "context_reason": "brief reason"
-            }
+            CRITICAL: Respond with ONLY raw JSON. No markdown, no code blocks, no backticks, no explanation.
+            Just the JSON object:
+            {"is_unavailable": true, "is_returning": false, "context_reason": "brief reason"}
             """,
             fanMessage,
             state.getCurrentState(),
@@ -511,6 +601,158 @@ public class AnthropicService {
         );
     }
 
+    private String stripMarkdownCodeBlocks(String text) {
+        if (text == null) return text;
+        
+        text = text.trim();
+        
+        if (text.startsWith("```json")) {
+            text = text.substring(7);
+        } else if (text.startsWith("```")) {
+            text = text.substring(3);
+        }
+        
+        if (text.endsWith("```")) {
+            text = text.substring(0, text.length() - 3);
+        }
+        
+        return text.trim();
+    }
+
+    public String generatePPVThankYouMessage(String systemPrompt, String userPrompt, Fan fan) {
+        String prompt = buildPPVThankYouPrompt(systemPrompt, userPrompt, fan);
+        
+        AnthropicRequest request = new AnthropicRequest();
+        request.setModel("claude-sonnet-4-5-20250929");
+        request.setMax_tokens(1024);
+        request.setSystem(getOnlyFansSystemPrompt());
+        
+        List<AnthropicRequest.MessageContent> messages = new ArrayList<>();
+        AnthropicRequest.MessageContent userMessage = new AnthropicRequest.MessageContent();
+        userMessage.setRole("user");
+        userMessage.setContent(prompt);
+        messages.add(userMessage);
+        
+        request.setMessages(messages);
+        
+        HttpHeaders headers = new HttpHeaders();
+        headers.set("x-api-key", apiKey);
+        headers.set("anthropic-version", "2023-06-01");
+        headers.setContentType(MediaType.APPLICATION_JSON);
+        
+        HttpEntity<AnthropicRequest> httpRequest = new HttpEntity<>(request, headers);
+        
+        try {
+            ResponseEntity<AnthropicResponse> response = callAnthropicWithRetry(httpRequest);
+            
+            if (response.getBody() != null && !response.getBody().getContent().isEmpty()) {
+                String aiResponse = response.getBody().getContent().get(0).getText();
+                log.info("Successfully generated PPV thank you message");
+                return aiResponse;
+            }
+            
+            log.warn("Empty response from Anthropic API");
+            return "Thank you so much babe! 💕";
+        } catch (Exception e) {
+            log.error("Failed to generate PPV thank you message", e);
+            return "Thank you so much babe! 💕";
+        }
+    }
+    
+    private String buildPPVThankYouPrompt(String systemPrompt, String userPrompt, Fan fan) {
+        StringBuilder context = new StringBuilder();
+        context.append("Fan Profile:\n");
+        context.append("- Username: ").append(fan.getOnlyfansUsername()).append("\n");
+        context.append("- Total Spending: $").append(fan.getTotalSpending()).append("\n");
+        context.append("- Message Count: ").append(fan.getMessageCount()).append("\n");
+        
+        if (fan.getIgUsername() != null) {
+            context.append("- Instagram: @").append(fan.getIgUsername()).append(" (linked)\n");
+        }
+        
+        context.append("\n").append(systemPrompt).append("\n\n");
+        context.append(userPrompt);
+        context.append("\n\nGenerate a natural, flirty thank you message as ").append(creatorName).append(":");
+        
+        return context.toString();
+    }
+
+    /**
+     * For classifier tasks (e.g. purchase intent, custom request). Uses low max_tokens
+     * so the model returns only "true" or "false" instead of conversational text.
+     */
+    public String generateClassifierResponse(String systemPrompt, String userPrompt, int maxTokens) {
+        AnthropicRequest request = new AnthropicRequest();
+        request.setModel("claude-sonnet-4-5-20250929");
+        request.setMax_tokens(maxTokens);
+        request.setSystem(systemPrompt);
+
+        List<AnthropicRequest.MessageContent> messages = new ArrayList<>();
+        AnthropicRequest.MessageContent userMessage = new AnthropicRequest.MessageContent();
+        userMessage.setRole("user");
+        userMessage.setContent(userPrompt);
+        messages.add(userMessage);
+
+        request.setMessages(messages);
+
+        HttpHeaders headers = new HttpHeaders();
+        headers.set("x-api-key", apiKey);
+        headers.set("anthropic-version", "2023-06-01");
+        headers.setContentType(MediaType.APPLICATION_JSON);
+
+        HttpEntity<AnthropicRequest> httpRequest = new HttpEntity<>(request, headers);
+
+        try {
+            ResponseEntity<AnthropicResponse> response = callAnthropicWithRetry(httpRequest);
+
+            if (response.getBody() != null && !response.getBody().getContent().isEmpty()) {
+                return response.getBody().getContent().get(0).getText();
+            }
+            return "";
+        } catch (Exception e) {
+            log.error("Failed to generate classifier response", e);
+            return "";
+        }
+    }
+
+    public String generateResponse(String systemPrompt, String userPrompt, Object context) {
+        AnthropicRequest request = new AnthropicRequest();
+        request.setModel("claude-sonnet-4-5-20250929");
+        request.setMax_tokens(1024);
+        request.setSystem(systemPrompt);
+        
+        List<AnthropicRequest.MessageContent> messages = new ArrayList<>();
+        AnthropicRequest.MessageContent userMessage = new AnthropicRequest.MessageContent();
+        userMessage.setRole("user");
+        userMessage.setContent(userPrompt);
+        messages.add(userMessage);
+        
+        request.setMessages(messages);
+        
+        HttpHeaders headers = new HttpHeaders();
+        headers.set("x-api-key", apiKey);
+        headers.set("anthropic-version", "2023-06-01");
+        headers.setContentType(MediaType.APPLICATION_JSON);
+        
+        HttpEntity<AnthropicRequest> httpRequest = new HttpEntity<>(request, headers);
+        
+        try {
+            ResponseEntity<AnthropicResponse> response = callAnthropicWithRetry(httpRequest);
+            
+            if (response.getBody() != null && !response.getBody().getContent().isEmpty()) {
+                String aiResponse = response.getBody().getContent().get(0).getText();
+                log.info("Successfully generated AI response");
+                return aiResponse;
+            }
+            
+            log.warn("Empty response from Anthropic API");
+            return "Hey! Thanks for reaching out 😊";
+        } catch (Exception e) {
+            log.error("Failed to generate AI response", e);
+            return "Hey! Thanks for reaching out 😊";
+        }
+    }
+    
     private Map<String, Object> createDefaultAnalysis() {
         Map<String, Object> analysis = new HashMap<>();
         analysis.put("is_unavailable", false);

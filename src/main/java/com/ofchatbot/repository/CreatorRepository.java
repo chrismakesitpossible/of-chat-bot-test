@@ -8,5 +8,6 @@ import java.util.Optional;
 @Repository
 public interface CreatorRepository extends JpaRepository<Creator, Long> {
     Optional<Creator> findByCreatorId(String creatorId);
+    Optional<Creator> findByOnlyfansAccountId(String onlyfansAccountId);
     boolean existsByCreatorId(String creatorId);
 }

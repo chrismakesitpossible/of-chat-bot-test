@@ -46,4 +46,25 @@ public class Fan {
     
     @Column(nullable = false)
     private LocalDateTime createdAt = LocalDateTime.now();
+    
+    private LocalDateTime lastTipPromptTime;
+    
+    private LocalDateTime lastCustomContentSuggestionTime;
+
+    /** Country (e.g. US, UK) for Tier-1 pricing; set from conversation or inferred. */
+    private String country;
+
+    /** When fan last replied within threshold (e.g. 5–10 min) to one of our last 2–3 messages. */
+    private LocalDateTime lastQuickReplyAt;
+
+    /** True after first paid PPV unlock (wallet test passed). */
+    private Boolean passedWalletTest = false;
+    
+    public String getOnlyfansChatId() {
+        return onlyfansChatId;
+    }
+    
+    public void setOnlyfansChatId(String onlyfansChatId) {
+        this.onlyfansChatId = onlyfansChatId;
+    }
 }

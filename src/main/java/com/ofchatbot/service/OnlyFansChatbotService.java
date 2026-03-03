@@ -10,12 +10,18 @@ import com.ofchatbot.entity.Fan;
 import com.ofchatbot.entity.Message;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 
 import java.time.LocalDateTime;
+import java.time.format.DateTimeFormatter;
+import java.time.format.DateTimeParseException;
+import java.time.temporal.ChronoUnit;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
 @Service
 @RequiredArgsConstructor
@@ -31,81 +37,88 @@ public class OnlyFansChatbotService {
     private final ConversationService conversationService;
     private final CreatorService creatorService;
     private final ScriptAnalyticsService scriptAnalyticsService;
+    private final ResponseTimingService responseTimingService;
+    private final PPVService ppvService;
+    private final CustomRequestService customRequestService;
+    private final PeakInterestDetectionService peakInterestDetectionService;
+    private final OrganicContentSuggestionService organicContentSuggestionService;
+    private final TipPromptService tipPromptService;
+    private final ShowerScriptService showerScriptService;
 
-    public void processNewSubscription(OnlyFansWebhookPayload webhook) {
-        try {
-            log.info("Processing new OnlyFans subscription");
+    @Value("${pricing.cold-days:7}")
+    private int coldDays = 7;
 
-            String accountId = webhook.getAccount_id();
-            Creator creator = creatorService.getOrCreateCreator(accountId);
+    public void processNewSubscription(OnlyFansWebhookPayload webhook, Creator creator) {
+            try {
+                log.info("Processing new OnlyFans subscription for creator: {}", creator.getName());
 
-            OnlyFansWebhookPayload.PayloadData.User user = webhook.getPayload().getUser();
-            String onlyfansUserId = String.valueOf(user.getId());
-            String onlyfansUsername = user.getUsername();
-            String chatId = onlyfansUserId;
+                OnlyFansWebhookPayload.PayloadData.User user = webhook.getPayload().getUser();
+                String onlyfansUserId = String.valueOf(user.getId());
+                String onlyfansUsername = user.getUsername();
+                String chatId = onlyfansUserId;
 
-            Optional<Fan> existingFan = fanService.findByOnlyfansUserId(onlyfansUserId);
+                Optional<Fan> existingFan = fanService.findByOnlyfansUserId(onlyfansUserId);
 
-            if (existingFan.isEmpty()) {
-                Fan newFan = new Fan();
-                newFan.setCreatorId(creator.getCreatorId());
-                newFan.setContactId(onlyfansUserId);
-                newFan.setOnlyfansUserId(onlyfansUserId);
-                newFan.setOnlyfansUsername(onlyfansUsername);
-                newFan.setOnlyfansChatId(chatId);
-                newFan.setMessageCount(0);
-                newFan.setState("OPENING");
-                newFan.setLastIntent("unknown");
-                newFan.setTotalSpending(0.0);
-                newFan.setLastUpdated(LocalDateTime.now());
-                newFan.setCreatedAt(LocalDateTime.now());
+                if (existingFan.isEmpty()) {
+                    Fan newFan = new Fan();
+                    newFan.setCreatorId(creator.getCreatorId());
+                    newFan.setContactId(onlyfansUserId);
+                    newFan.setOnlyfansUserId(onlyfansUserId);
+                    newFan.setOnlyfansUsername(onlyfansUsername);
+                    newFan.setOnlyfansChatId(chatId);
+                    newFan.setMessageCount(0);
+                    newFan.setState("OPENING");
+                    newFan.setLastIntent("unknown");
+                    newFan.setTotalSpending(0.0);
+                    newFan.setLastUpdated(LocalDateTime.now());
+                    newFan.setCreatedAt(LocalDateTime.now());
 
-                newFan = fanService.saveFan(newFan);
-                log.info("Created new OnlyFans fan: {}", onlyfansUsername);
+                    newFan = fanService.saveFan(newFan);
+                    log.info("Created new OnlyFans fan: {}", onlyfansUsername);
 
-                Conversation conversation = conversationService.getOrCreateConversation(newFan);
-                ConversationState state = scriptEngineService.getOrCreateConversationState(conversation, newFan);
+                    Conversation conversation = conversationService.getOrCreateConversation(newFan);
+                    ConversationState state = scriptEngineService.getOrCreateConversationState(conversation, newFan);
 
-                String welcomeTemplate = scriptEngineService.getScriptTemplate("WELCOME", state);
-                Map<String, String> frameworkGuidance = scriptEngineService.getFrameworkGuidance(state);
+                    String welcomeTemplate = scriptEngineService.getScriptTemplate("WELCOME", state);
+                    Map<String, String> frameworkGuidance = scriptEngineService.getFrameworkGuidance(state);
 
-                scriptAnalyticsService.trackScriptUsage(creator.getCreatorId(), "WELCOME", state.getCurrentState());
+                    scriptAnalyticsService.trackScriptUsage(creator.getCreatorId(), "WELCOME", state.getCurrentState());
 
-                String welcomeMessage = anthropicService.generateScriptBasedResponse(
-                    "New subscriber",
-                    "",
-                    newFan,
-                    state,
-                    welcomeTemplate,
-                    frameworkGuidance
+                    String welcomeMessage = anthropicService.generateScriptBasedResponse(
+                        "New subscriber",
+                        "",
+                        newFan,
+                        state,
+                        welcomeTemplate,
+                        frameworkGuidance
+                    );
+
+                    onlyFansApiService.sendMessage(chatId, welcomeMessage, null, creator.getCreatorId());
+
+                    messageService.saveMessage(
+                        creator.getCreatorId(),
+                        onlyfansUserId,
+                        "bot",
+                        welcomeMessage,
+                        LocalDateTime.now().toString(),
+                        "onlyfans"
+                    );
+
+                    scriptEngineService.updateConversationState(state, "CASUAL", "WELCOME");
+                } else {
+                    log.info("Fan already exists: {}", onlyfansUsername);
+                }
+
+            } catch (Exception e) {
+                log.error("Error processing new subscription", e);
+                errorLogService.logError(
+                    "ONLYFANS_SUBSCRIPTION_PROCESSING_FAILED",
+                    "Failed to process new subscription",
+                    e,
+                    "Webhook: " + webhook.toString()
                 );
-
-                onlyFansApiService.sendMessage(chatId, welcomeMessage);
-
-                messageService.saveMessage(
-                    creator.getCreatorId(),
-                    onlyfansUserId,
-                    "bot",
-                    welcomeMessage,
-                    LocalDateTime.now().toString(),
-                    "onlyfans"
-                );
-
-                scriptEngineService.updateConversationState(state, "CASUAL", "WELCOME");
-            } else {
-                log.info("Fan already exists: {}", onlyfansUsername);
             }
-
-        } catch (Exception e) {
-            log.error("Error processing new subscription", e);
-            errorLogService.logError(
-                "ONLYFANS_SUBSCRIPTION_PROCESSING_FAILED",
-                "Failed to process new subscription",
-                e,
-                "Webhook: " + webhook.toString()
-            );
         }
-    }
 
 
     private String stripHtml(String html) {
@@ -115,12 +128,9 @@ public class OnlyFansChatbotService {
         return html.replaceAll("<[^>]*>", "").trim();
     }
 
-    public void processIncomingMessage(OnlyFansWebhookPayload webhook) {
+    public void processIncomingMessage(OnlyFansWebhookPayload webhook, Creator creator) {
         try {
-            log.info("Processing incoming OnlyFans message");
-
-            String accountId = webhook.getAccount_id();
-            Creator creator = creatorService.getOrCreateCreator(accountId);
+            log.info("Processing incoming OnlyFans message for creator: {}", creator.getName());
 
             OnlyFansWebhookPayload.PayloadData payload = webhook.getPayload();
             OnlyFansWebhookPayload.PayloadData.FromUser fromUser = payload.getFromUser();
@@ -132,6 +142,7 @@ public class OnlyFansChatbotService {
 
             Optional<Fan> fanOpt = fanService.findByOnlyfansUserId(onlyfansUserId);
             Fan fan;
+            boolean reengagingAfterCold = false;
 
             if (fanOpt.isEmpty()) {
                 fan = new Fan();
@@ -150,10 +161,14 @@ public class OnlyFansChatbotService {
                 log.info("Created new fan from message: {}", onlyfansUsername);
             } else {
                 fan = fanOpt.get();
+                reengagingAfterCold = isReengagingAfterCold(fan);
                 fan.setMessageCount(fan.getMessageCount() + 1);
                 fan.setLastUpdated(LocalDateTime.now());
                 fan = fanService.saveFan(fan);
             }
+
+            updateActiveReplierIfNeeded(fan, onlyfansUserId, payload.getCreatedAt());
+            tryExtractAndStoreCountry(fan, messageText);
 
             Conversation conversation = conversationService.getOrCreateConversation(fan);
             ConversationState state = scriptEngineService.getOrCreateConversationState(conversation, fan);
@@ -182,46 +197,89 @@ public class OnlyFansChatbotService {
                 }
             }
 
+            String externalMessageId = payload.getId() != null ? String.valueOf(payload.getId()) : null;
+            
             messageService.saveMessage(
                 creator.getCreatorId(),
                 onlyfansUserId,
                 "user",
                 messageText,
                 payload.getCreatedAt(),
-                "onlyfans"
+                "onlyfans",
+                externalMessageId
             );
 
             List<Message> recentMessages = messageService.getRecentMessages(onlyfansUserId, 10);
-            String analysisJson = scriptEngineService.analyzeConversationState(state, messageText, recentMessages);
+            
+            // Get all recent fan messages sent within last 2 minutes for batched context
+            String batchedMessageText = messageText;
+            long recentFanMessageCount = recentMessages.stream()
+                .filter(m -> "user".equals(m.getRole()))
+                .filter(m -> java.time.Duration.between(m.getTimestamp(), java.time.LocalDateTime.now()).toMinutes() < 2)
+                .count();
+            
+            if (recentFanMessageCount > 1) {
+                // Combine recent fan messages for analysis
+                StringBuilder batchedMessages = new StringBuilder();
+                recentMessages.stream()
+                    .filter(m -> "user".equals(m.getRole()))
+                    .filter(m -> java.time.Duration.between(m.getTimestamp(), java.time.LocalDateTime.now()).toMinutes() < 2)
+                    .forEach(m -> {
+                        if (batchedMessages.length() > 0) {
+                            batchedMessages.append("\n");
+                        }
+                        batchedMessages.append(m.getText());
+                    });
+                batchedMessageText = batchedMessages.toString();
+                log.info("Batched {} messages into: {}", recentFanMessageCount, batchedMessageText);
+            }
 
-            scriptEngineService.detectAndStoreFanPreferences(state, messageText);
+            // Detect explicit purchase intent once so we can drive both PPV and reply behaviour
+            boolean explicitPurchaseIntent = hasExplicitPurchaseIntent(batchedMessageText);
+            // Detect purchase complaints / scam concerns so we can pause sales and focus on fixing issues.
+            boolean purchaseComplaint = isPurchaseComplaintOrScamConcern(batchedMessageText);
+            
+            String analysisJson = scriptEngineService.analyzeConversationState(state, batchedMessageText, recentMessages);
 
-            String scriptCategory = scriptEngineService.selectScriptCategory(state, analysisJson);
+            scriptEngineService.detectAndStoreFanPreferences(state, batchedMessageText);
+
+            String scriptCategory = scriptEngineService.selectScriptCategory(state, analysisJson, recentMessages);
             String scriptTemplate = scriptEngineService.getScriptTemplate(scriptCategory, state);
             Map<String, String> frameworkGuidance = scriptEngineService.getFrameworkGuidance(state);
 
             scriptAnalyticsService.trackScriptUsage(creator.getCreatorId(), scriptCategory, state.getCurrentState());
 
             String conversationHistory = messageService.getConversationHistory(onlyfansUserId, 10);
-            String response = anthropicService.generateScriptBasedResponse(
-                messageText,
-                conversationHistory,
-                fan,
-                state,
-                scriptTemplate,
-                frameworkGuidance
-            );
+            log.info("Conversation history for fan {}: {}", onlyfansUserId, conversationHistory);
+            log.info("Batched message text being sent to AI: {}", batchedMessageText);
+            
+            // If this message is a clear "send me content / another one" moment AND
+            // we're going to handle it via PPV, skip the extra long ENGAGEMENT reply
+            // so the vibe stays focused on the offer.
+            if (!explicitPurchaseIntent) {
+                String response = anthropicService.generateScriptBasedResponse(
+                    batchedMessageText,
+                    conversationHistory,
+                    fan,
+                    state,
+                    scriptTemplate,
+                    frameworkGuidance
+                );
 
-            onlyFansApiService.sendMessage(chatId, response);
+                String replyToMessageId = shouldUseReplyTo(state, scriptCategory) ? externalMessageId : null;
+                
+                responseTimingService.scheduleNaturalResponse(chatId, response, state, fan, batchedMessageText, replyToMessageId, creator.getCreatorId());
 
-            messageService.saveMessage(
-                creator.getCreatorId(),
-                onlyfansUserId,
-                "bot",
-                response,
-                LocalDateTime.now().toString(),
-                "onlyfans"
-            );
+                messageService.saveMessage(
+                    creator.getCreatorId(),
+                    onlyfansUserId,
+                    "bot",
+                    response,
+                    LocalDateTime.now().toString(),
+                    "onlyfans",
+                    null
+                );
+            }
 
             JsonNode analysis = new ObjectMapper().readTree(analysisJson);
             String suggestedNextState = analysis.get("suggested_next_state").asText();
@@ -234,10 +292,80 @@ public class OnlyFansChatbotService {
                 engagementLevel
             );
 
+            state.setMessageCount(state.getMessageCount() != null ? state.getMessageCount() + 1 : 1);
+            state.setCurrentPhase(analysis.has("current_phase") ? analysis.get("current_phase").asText() : state.getCurrentState());
+            
             scriptEngineService.updateConversationState(state, suggestedNextState, scriptCategory);
 
             if (scriptCategory.equals("LOCK_SALE") || scriptCategory.equals("LEAD_OPPORTUNITY")) {
                 scriptEngineService.advanceFrameworkStage(state);
+            }
+
+            boolean isPeakMoment = peakInterestDetectionService.isPeakInterestMoment(state, recentMessages);
+            
+            if (purchaseComplaint) {
+                log.info("Purchase complaint / scam concern detected for fan {}. Pausing sales flows.", fan.getId());
+                handlePurchaseComplaint(fan, batchedMessageText);
+            } else {
+                boolean shouldSendPPV = shouldSendPPVOffer(state, scriptCategory, batchedMessageText, explicitPurchaseIntent);
+                
+                boolean specificOrNicheRequest = explicitPurchaseIntent || isCustomRequest(batchedMessageText);
+                final Fan fanForPpv = fan;
+                final boolean reengagingForPpv = reengagingAfterCold;
+                if (isPeakMoment) {
+                    String peakReason = peakInterestDetectionService.getPeakInterestReason(state, recentMessages);
+                    log.info("Peak interest moment detected for fan {}: {}", fan.getId(), peakReason);
+                    
+                    if (shouldSendPPV) {
+                        if (explicitPurchaseIntent) {
+                            responseTimingService.scheduleDelayedPPVWithTyping(chatId, creator.getCreatorId(), () -> {
+                                if (showerScriptService.isOnShowerNotCompleted(fanForPpv.getId())) {
+                                    showerScriptService.sendShowerPPVOffer(fanForPpv, chatId, recentMessages);
+                                } else {
+                                    ppvService.sendPPVOffer(fanForPpv, state, conversation, chatId, recentMessages, specificOrNicheRequest, reengagingForPpv);
+                                }
+                            });
+                        } else {
+                            if (showerScriptService.isOnShowerNotCompleted(fan.getId())) {
+                                showerScriptService.sendShowerPPVOffer(fan, chatId, recentMessages);
+                            } else {
+                                ppvService.sendPPVOffer(fan, state, conversation, chatId, recentMessages, specificOrNicheRequest, reengagingAfterCold);
+                            }
+                        }
+                    }
+                } else if (shouldSendPPV) {
+                    if (explicitPurchaseIntent) {
+                        responseTimingService.scheduleDelayedPPVWithTyping(chatId, creator.getCreatorId(), () -> {
+                            if (showerScriptService.isOnShowerNotCompleted(fanForPpv.getId())) {
+                                showerScriptService.sendShowerPPVOffer(fanForPpv, chatId, recentMessages);
+                            } else {
+                                ppvService.sendPPVOffer(fanForPpv, state, conversation, chatId, recentMessages, specificOrNicheRequest, reengagingForPpv);
+                            }
+                        });
+                    } else {
+                        if (showerScriptService.isOnShowerNotCompleted(fan.getId())) {
+                            showerScriptService.sendShowerPPVOffer(fan, chatId, recentMessages);
+                        } else {
+                            ppvService.sendPPVOffer(fan, state, conversation, chatId, recentMessages, specificOrNicheRequest, reengagingAfterCold);
+                        }
+                    }
+                }
+                
+                // When they're explicitly asking for content / another video,
+                // rely on the PPV flow instead of also kicking off a custom-request thread.
+                if (!explicitPurchaseIntent && isCustomRequest(batchedMessageText)) {
+                    handleCustomRequest(fan, batchedMessageText);
+                } else if (organicContentSuggestionService.shouldSuggestCustomContent(state, fan, batchedMessageText)) {
+                    String recentConversationHistory = messageService.getConversationHistory(onlyfansUserId, 5);
+                    organicContentSuggestionService.sendOrganicCustomContentSuggestion(fan, state, recentConversationHistory);
+                    fanService.saveFan(fan);
+                }
+                
+                if (tipPromptService.shouldPromptForTip(state, fan)) {
+                    String recentConversationHistory = messageService.getConversationHistory(onlyfansUserId, 5);
+                    tipPromptService.sendTipPrompt(fan, state, recentConversationHistory);
+                    fanService.saveFan(fan);
+                }
             }
 
             log.info("Successfully processed OnlyFans message from: {} with script category: {}",
@@ -253,5 +381,328 @@ public class OnlyFansChatbotService {
             );
         }
     }
-}
+    
+    private boolean shouldUseReplyTo(ConversationState state, String scriptCategory) {
+        if (scriptCategory == null) return false;
+        
+        if (scriptCategory.equals("PPV_OFFER") || scriptCategory.equals("LOCK_SALE")) {
+            return true;
+        }
+        
+        if (state.getIntensityLevel() != null && state.getIntensityLevel() >= 5) {
+            return true;
+        }
+        
+        return Math.random() < 0.3;
+    }
+    
+    /**
+     * Parse true/false from AI classifier response. Model sometimes returns
+     * conversational text plus "-> true" or "-> false"; we extract the intended boolean.
+     */
+    private boolean parseBooleanFromAiResponse(String aiResult) {
+        if (aiResult == null || aiResult.isBlank()) {
+            return false;
+        }
+        String s = aiResult.toLowerCase().trim();
+        // Explicit "-> true" / "-> false" (model often appends this)
+        if (s.contains("-> true")) return true;
+        if (s.contains("-> false")) return false;
+        // "answer: true" / "answer is true" etc.
+        if (s.matches("(?s).*answer\\s*:?\\s*true\\b.*")) return true;
+        if (s.matches("(?s).*answer\\s*:?\\s*false\\b.*")) return false;
+        // Last occurrence of word "true" or "false" (model often puts answer at end)
+        Pattern word = Pattern.compile("\\b(true|false)\\b");
+        Matcher m = word.matcher(s);
+        int lastTrue = -1, lastFalse = -1;
+        while (m.find()) {
+            if (m.group(1).equals("true")) lastTrue = m.start();
+            else lastFalse = m.start();
+        }
+        if (lastTrue >= 0 || lastFalse >= 0) {
+            return lastTrue > lastFalse;
+        }
+        // Exact or prefix
+        if (s.equals("true") || s.startsWith("true")) return true;
+        if (s.equals("false") || s.startsWith("false")) return false;
+        return false;
+    }
 
+    private boolean hasExplicitPurchaseIntent(String messageText) {
+        if (messageText == null || messageText.trim().isEmpty()) {
+            log.debug("Empty message, no purchase intent detected");
+            return false;
+        }
+        
+        log.info("Analyzing purchase intent for message: '{}'", messageText);
+        
+        String analysisPrompt = String.format(
+            "You are a PURCHASE INTENT classifier. Output ONLY the word true or false.\n\n" +
+            "MESSAGE: \"%s\"\n\n" +
+            "Answer TRUE if the user: asks for videos/photos/content, asks what you have/offer, wants to buy or see paid content, asks about pricing, or any request for content.\n" +
+            "Answer FALSE only if the message has nothing to do with content or buying (e.g. just 'hi' or off-topic).\n\n" +
+            "Examples: 'got any videos?' = true. 'hey you got any videos for me?' = true. 'what content do you have?' = true. 'hi' = false.\n\n" +
+            "Your one-word answer:",
+            messageText.replace("\"", "\\\""));
+        
+        try {
+            log.info("Sending EXPERT purchase intent analysis to AI for: '{}'", messageText);
+            String aiResult = anthropicService.generateClassifierResponse(
+                "You are a binary classifier. Reply with exactly one word: true or false. Nothing else.",
+                analysisPrompt,
+                10
+            );
+            
+            boolean hasIntent = parseBooleanFromAiResponse(aiResult);
+            log.info("EXPERT PURCHASE INTENT RESULT: {} -> {} for message: '{}'", aiResult, hasIntent, messageText);
+            return hasIntent;
+            
+        } catch (Exception e) {
+            log.error("Failed to analyze purchase intent with AI for message: '{}'", messageText, e);
+            return false;
+        }
+    }
+
+    private boolean isPurchaseComplaintOrScamConcern(String messageText) {
+        if (messageText == null || messageText.trim().isEmpty()) {
+            return false;
+        }
+        log.info("Analyzing purchase complaint / scam concern for message: '{}'", messageText);
+
+        String analysisPrompt = String.format(
+            "You are a classifier for purchase COMPLAINTS and SCAM concerns. Output ONLY 'true' or 'false'.\n\n" +
+            "MESSAGE: \"%s\"\n\n" +
+            "Answer TRUE if the user:\n" +
+            "- Says they paid but did not receive what they paid for\n" +
+            "- Mentions scam, being scammed, or thinking the page is fake\n" +
+            "- Repeatedly says they are still waiting for content or photos they bought\n" +
+            "- Says they will report, dispute, or chargeback because of missing content\n" +
+            "Answer FALSE for normal price questions, normal hesitation, or generic complaints.\n\n" +
+            "Your one-word answer:",
+            messageText.replace("\"", "\\\""));
+
+        try {
+            String aiResult = anthropicService.generateClassifierResponse(
+                "You are a binary classifier. Reply with exactly one word: true or false. Nothing else.",
+                analysisPrompt,
+                10
+            );
+            boolean result = parseBooleanFromAiResponse(aiResult);
+            log.info("Purchase complaint analysis result: {} -> {} for message: '{}'", aiResult, result, messageText);
+            return result;
+        } catch (Exception e) {
+            log.error("Failed to analyze purchase complaint for message: '{}'", messageText, e);
+            return false;
+        }
+    }
+
+    private void handlePurchaseComplaint(Fan fan, String messageText) {
+        String systemPrompt = """
+            You are responding to a fan who is complaining about a purchase (missing content, scam concern, or not receiving what they paid for).
+
+            CRITICAL RULES:
+            - DO NOT try to sell anything or mention prices.
+            - DO NOT send any new PPV offer.
+            - Apologize clearly and sincerely.
+            - Acknowledge that you understand they feel they did not get what they paid for.
+            - Reassure them you want to make it right and fix the issue.
+            - Keep it SHORT (1-3 sentences).
+            - Calm their suspicion: emphasize you're real and care about them getting their content.
+            - Invite them to clarify which set or purchase they're talking about if it's not clear.
+
+            Generate ONLY the message text, nothing else.
+            """;
+
+        String response = anthropicService.generateResponse(
+            systemPrompt,
+            "Fan message: " + messageText,
+            null
+        );
+
+        onlyFansApiService.sendMessage(fan.getOnlyfansChatId(), response);
+
+        log.info("Handled purchase complaint / scam concern for fan {}", fan.getId());
+    }
+
+    private boolean shouldSendPPVOffer(ConversationState state, String scriptCategory, String messageText, boolean explicitPurchaseIntent) {
+        // Explicit "send me content / another one" always allows a PPV offer
+        if (explicitPurchaseIntent) {
+            log.info("Explicit purchase intent detected, overriding PPV restrictions");
+            return true;
+        }
+        
+        if (state.getMessageCount() < 5) {
+            return false;
+        }
+
+        if (scriptCategory.equals("LOCK_SALE") || scriptCategory.equals("PPV_OFFER")) {
+            return true;
+        }
+
+        if (state.getCurrentPhase() != null &&
+            (state.getCurrentPhase().equals("FLIRTY") ||
+             state.getCurrentPhase().equals("SUGGESTIVE") ||
+             state.getCurrentPhase().equals("INTIMATE"))) {
+
+            if (state.getIntensityLevel() != null && state.getIntensityLevel() >= 6) {
+                return true;
+            }
+        }
+        
+        return false;
+    }
+    
+    private boolean isMediaRequest(String messageText) {
+            log.info("Analyzing media request for message: '{}'", messageText);
+            
+            // Use AI to determine if this is requesting media content
+            String analysisPrompt = String.format(
+            "Analyze this message for media/content request intent.\n\n" +
+            "Message: \"%s\"\n\n" +
+            "Determine if this message is requesting:\n" +
+            "1. Photos/videos/content to be sent\n" +
+            "2. Wants to see creator content\n" +
+            "3. Asking for specific media types\n\n" +
+            "Return ONLY: true or false",
+            messageText.replace("\"", "\\\""));
+        
+        try {
+            log.info("Sending media request analysis to AI for: '{}'", messageText);
+            String aiResult = anthropicService.generateResponse(
+                "You are a media request detector. Analyze messages and return only 'true' or 'false'.",
+                analysisPrompt,
+                null
+            );
+            
+            String cleanResult = aiResult.toLowerCase().trim();
+            boolean isMedia = cleanResult.contains("true") && !cleanResult.contains("false");
+            
+            log.info("Media request analysis result: {} -> {} for message: '{}'", aiResult, isMedia, messageText);
+            return isMedia;
+            
+        } catch (Exception e) {
+            log.error("Failed to analyze media request with AI for message: '{}'", messageText, e);
+            return false;
+        }
+    }
+    
+    private boolean isCustomRequest(String messageText) {
+        log.info("Analyzing custom request for message: '{}'", messageText);
+        
+        String analysisPrompt = String.format(
+            "Is this message asking for custom/personalized content, or asking what content/videos you have (interest in content)?\n\n" +
+            "Message: \"%s\"\n\n" +
+            "Answer true if: they ask for custom content, personalized content, specific content for them, OR they ask what you have / got any videos / what content - that shows interest we can turn into a custom or PPV offer. Answer false only for generic chat with no content interest.\n\n" +
+            "Output ONLY one word: true or false",
+            messageText.replace("\"", "\\\""));
+        
+        try {
+            log.info("Sending custom request analysis to AI for: '{}'", messageText);
+            String aiResult = anthropicService.generateClassifierResponse(
+                "You are a binary classifier. Reply with exactly one word: true or false. Nothing else.",
+                analysisPrompt,
+                10
+            );
+            
+            boolean isCustom = parseBooleanFromAiResponse(aiResult);
+            log.info("Custom request analysis result: {} -> {} for message: '{}'", aiResult, isCustom, messageText);
+            return isCustom;
+            
+        } catch (Exception e) {
+            log.error("Failed to analyze custom request with AI for message: '{}'", messageText, e);
+            return false;
+        }
+    }
+
+    private void handleCustomRequest(Fan fan, String messageText) {
+        String askForDetailsPrompt = """
+            You are responding to a fan who seems interested in custom content.
+
+            CRITICAL RULES:
+            - Ask them what they'd like to see in the custom video
+            - Keep it SHORT (1-2 sentences)
+            - Be flirty and excited about making something special for them
+            - Use 1-2 emojis max
+            - Make them feel special
+
+            Generate ONLY the message asking for details, nothing else.
+            """;
+
+        String response = anthropicService.generateResponse(
+            askForDetailsPrompt,
+            "Fan message: " + messageText,
+            null
+        );
+
+        onlyFansApiService.sendMessage(fan.getOnlyfansChatId(), response);
+
+        customRequestService.processCustomRequest(fan, messageText, "Pending details from fan");
+
+        log.info("Initiated custom request conversation with fan {}", fan.getId());
+    }
+
+    /** If fan replied within X min to at least one of our last 2–3 messages, mark as active (lastQuickReplyAt). */
+    private void updateActiveReplierIfNeeded(Fan fan, String contactId, String fanMessageCreatedAt) {
+        if (fanMessageCreatedAt == null || fanMessageCreatedAt.isBlank()) return;
+        LocalDateTime fanTime = parseCreatedAt(fanMessageCreatedAt);
+        List<Message> lastBot = messageService.getLastBotMessages(contactId, 3);
+        int thresholdMinutes = 10;
+        for (Message botMsg : lastBot) {
+            long minutesBetween = java.time.Duration.between(botMsg.getTimestamp(), fanTime).toMinutes();
+            if (minutesBetween >= 0 && minutesBetween <= thresholdMinutes) {
+                fan.setLastQuickReplyAt(fanTime);
+                fanService.saveFan(fan);
+                log.debug("Fan {} marked as active replier (replied within {} min)", fan.getId(), minutesBetween);
+                return;
+            }
+        }
+    }
+
+    private LocalDateTime parseCreatedAt(String createdAt) {
+        try {
+            return LocalDateTime.parse(createdAt, DateTimeFormatter.ISO_DATE_TIME);
+        } catch (DateTimeParseException e) {
+            try {
+                return LocalDateTime.parse(createdAt, DateTimeFormatter.ISO_LOCAL_DATE_TIME);
+            } catch (DateTimeParseException e2) {
+                log.trace("Could not parse createdAt: {}", createdAt);
+                return LocalDateTime.now();
+            }
+        }
+    }
+
+    /** True when fan's last activity was cold-days+ ago (re-engaging after going cold → $9.95–$19.95 re-warm). */
+    private boolean isReengagingAfterCold(Fan fan) {
+        if (fan.getLastUpdated() == null) return false;
+        long daysSince = ChronoUnit.DAYS.between(fan.getLastUpdated(), LocalDateTime.now());
+        if (daysSince >= coldDays) {
+            log.info("Fan {} re-engaging after {} days cold", fan.getId(), daysSince);
+            return true;
+        }
+        return false;
+    }
+
+    /** Try to extract country from message (e.g. "I'm from the US", "UK", "America") or infer from language; store on fan. */
+    private void tryExtractAndStoreCountry(Fan fan, String messageText) {
+        if (fan.getCountry() != null && !fan.getCountry().isBlank()) return;
+        if (messageText == null || messageText.isBlank()) return;
+        String lower = messageText.trim().toLowerCase();
+        String found = null;
+        if (lower.matches(".*\\b(from|in|live in)\\s+(the\\s+)?(us|usa|america|united states)\\b.*")) found = "US";
+        else if (lower.matches(".*\\b(from|in|live in)\\s+(the\\s+)?(uk|britain|england)\\b.*")) found = "UK";
+        else if (lower.matches(".*\\b(from|in|live in)\\s+(the\\s+)?(australia|au)\\b.*")) found = "AU";
+        else if (lower.matches(".*\\b(from|in|live in)\\s+(the\\s+)?(canada|ca)\\b.*")) found = "CA";
+        else if (lower.matches(".*\\b(from|in|live in)\\s+(the\\s+)?(germany|de)\\b.*")) found = "DE";
+        else if (lower.matches(".*\\b(us|usa|america)\\b.*")) found = "US";
+        else if (lower.matches(".*\\b(uk|britain|england)\\b.*")) found = "UK";
+        else if (lower.matches(".*\\b(australia|au)\\b.*")) found = "AU";
+        else if (lower.matches(".*\\b(canada|ca)\\b.*")) found = "CA";
+        else if (lower.matches(".*\\b(germany|de)\\b.*")) found = "DE";
+        if (found != null) {
+            fan.setCountry(found);
+            fanService.saveFan(fan);
+            log.info("Stored country for fan {}: {}", fan.getId(), found);
+        }
+    }
+
+}

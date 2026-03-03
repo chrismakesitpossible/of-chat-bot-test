@@ -17,17 +17,19 @@ public class ConversationService {
     public Conversation getOrCreateConversation(Fan fan) {
         Optional<Conversation> existingConversation = conversationRepository
             .findByFanIdAndPlatform(fan.getId(), "onlyfans");
-        
+
         if (existingConversation.isPresent()) {
             return existingConversation.get();
         }
-        
+
         Conversation conversation = new Conversation();
         conversation.setFanId(fan.getId());
         conversation.setPlatform("onlyfans");
         conversation.setCreatorId(fan.getCreatorId());
         conversation.setContactId(fan.getContactId());
-        
+        conversation.setConversationId("of_" + fan.getOnlyfansUserId());
+        conversation.setLocationId("onlyfans_platform");
+
         return conversationRepository.save(conversation);
     }
 }

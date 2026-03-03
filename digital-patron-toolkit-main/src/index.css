@@ -1,0 +1,102 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap');
+
+@layer base {
+  :root {
+    --background: 220 16% 4%;
+    --foreground: 210 20% 95%;
+
+    --card: 220 14% 7%;
+    --card-foreground: 210 20% 95%;
+
+    --popover: 220 14% 7%;
+    --popover-foreground: 210 20% 95%;
+
+    --primary: 16 85% 60%;
+    --primary-foreground: 0 0% 100%;
+
+    --secondary: 220 14% 12%;
+    --secondary-foreground: 210 20% 85%;
+
+    --muted: 220 14% 14%;
+    --muted-foreground: 215 12% 50%;
+
+    --accent: 220 14% 16%;
+    --accent-foreground: 210 20% 90%;
+
+    --destructive: 0 72% 51%;
+    --destructive-foreground: 0 0% 100%;
+
+    --border: 220 12% 14%;
+    --input: 220 12% 16%;
+    --ring: 16 85% 60%;
+
+    --radius: 0.625rem;
+
+    --sidebar-background: 220 14% 5%;
+    --sidebar-foreground: 210 20% 85%;
+    --sidebar-primary: 16 85% 60%;
+    --sidebar-primary-foreground: 0 0% 100%;
+    --sidebar-accent: 220 14% 12%;
+    --sidebar-accent-foreground: 210 20% 90%;
+    --sidebar-border: 220 12% 12%;
+    --sidebar-ring: 16 85% 60%;
+
+    /* Custom tokens */
+    --success: 142 71% 45%;
+    --success-foreground: 0 0% 100%;
+    --warning: 38 92% 50%;
+    --warning-foreground: 0 0% 100%;
+    --surface-1: 220 14% 7%;
+    --surface-2: 220 14% 10%;
+    --surface-3: 220 14% 14%;
+    --gradient-primary: linear-gradient(135deg, hsl(16, 85%, 60%), hsl(30, 90%, 55%));
+    --gradient-subtle: linear-gradient(135deg, hsl(220, 14%, 7%), hsl(220, 14%, 12%));
+    --shadow-glow: 0 0 40px -10px hsl(16 85% 60% / 0.3);
+  }
+}
+
+@layer base {
+  * {
+    @apply border-border;
+  }
+
+  body {
+    @apply bg-background text-foreground font-sans antialiased;
+    font-family: 'Inter', system-ui, -apple-system, sans-serif;
+  }
+
+  code, pre, .font-mono {
+    font-family: 'JetBrains Mono', monospace;
+  }
+}
+
+@layer utilities {
+  .text-gradient {
+    @apply bg-clip-text text-transparent;
+    background-image: var(--gradient-primary);
+  }
+
+  .surface-1 {
+    background-color: hsl(var(--surface-1));
+  }
+
+  .surface-2 {
+    background-color: hsl(var(--surface-2));
+  }
+
+  .surface-3 {
+    background-color: hsl(var(--surface-3));
+  }
+
+  .glow-primary {
+    box-shadow: var(--shadow-glow);
+  }
+
+  .border-subtle {
+    border-color: hsl(var(--border));
+  }
+}

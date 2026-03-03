@@ -37,4 +37,23 @@ public class Message {
     
     @Column(nullable = false)
     private LocalDateTime createdAt = LocalDateTime.now();
+    
+    @Column(name = "external_message_id")
+    private String externalMessageId;
+    
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "conversation_id")
+    private Conversation conversation;
+    
+    public boolean isFromFan() {
+        return "user".equals(role);
+    }
+    
+    public String getContent() {
+        return text;
+    }
+    
+    public void setContent(String content) {
+        this.text = content;
+    }
 }

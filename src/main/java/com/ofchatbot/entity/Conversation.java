@@ -5,6 +5,7 @@ import lombok.AllArgsConstructor;
 import lombok.Data;
 import lombok.NoArgsConstructor;
 import java.time.LocalDateTime;
+import java.util.List;
 
 @Entity
 @Table(name = "conversations")
@@ -38,5 +39,16 @@ public class Conversation {
 
     @Column(nullable = false)
     private LocalDateTime lastMessageAt = LocalDateTime.now();
+    
+    @OneToMany(mappedBy = "conversation", cascade = CascadeType.ALL, fetch = FetchType.LAZY)
+    private List<Message> messages;
+    
+    public List<Message> getMessages() {
+        return messages;
+    }
+    
+    public void setMessages(List<Message> messages) {
+        this.messages = messages;
+    }
 }
 
