@@ -241,9 +241,14 @@ public class ScriptEngineService {
                 boolean isReturning = analysis.get("is_returning").asBoolean();
 
                 if (state.getLastScriptCategory() == null) {
-                    // Only use WELCOME for true first contact. If we have recent back-and-forth, stay in flow (ENGAGEMENT).
+                    // Only use WELCOME for true first contact. If we have recent back-and-forth or multiple fan messages, stay in flow (ENGAGEMENT).
                     if (recentMessages != null && recentMessages.size() >= 4) {
                         logger.info("lastScriptCategory was null but {} recent messages present; using ENGAGEMENT instead of WELCOME to preserve context", recentMessages.size());
+                        return "ENGAGEMENT";
+                    }
+                    long fanMessageCount = (recentMessages == null) ? 0 : recentMessages.stream().filter(m -> "user".equals(m.getRole())).count();
+                    if (fanMessageCount >= 2) {
+                        logger.info("lastScriptCategory was null but fan has sent {} messages in recent history; using ENGAGEMENT instead of WELCOME", fanMessageCount);
                         return "ENGAGEMENT";
                     }
                     return "WELCOME";

@@ -53,6 +53,30 @@ public interface VaultMediaRepository extends JpaRepository<VaultMedia, Long> {
 
     @Query(value = "SELECT * FROM vault_media WHERE content_vault_id = :vaultId " +
            "AND media_id NOT IN (SELECT media_id FROM fan_purchases WHERE fan_id = :fanId) " +
+           "AND media_id NOT IN (:excludeIds) " +
+           "ORDER BY RANDOM() LIMIT :limit", nativeQuery = true)
+    List<VaultMedia> findRandomUnpurchasedMediaMultipleExcluding(
+        @Param("vaultId") Long vaultId,
+        @Param("fanId") Long fanId,
+        @Param("excludeIds") List<String> excludeIds,
+        @Param("limit") int limit
+    );
+
+    @Query(value = "SELECT * FROM vault_media WHERE content_vault_id = :vaultId " +
+           "AND media_id NOT IN (SELECT media_id FROM fan_purchases WHERE fan_id = :fanId) " +
+           "AND (tags LIKE CONCAT('%', :interest, '%') OR categories LIKE CONCAT('%', :interest, '%')) " +
+           "AND media_id NOT IN (:excludeIds) " +
+           "ORDER BY RANDOM() LIMIT :limit", nativeQuery = true)
+    List<VaultMedia> findRandomUnpurchasedMediaByInterestExcluding(
+        @Param("vaultId") Long vaultId,
+        @Param("fanId") Long fanId,
+        @Param("interest") String interest,
+        @Param("excludeIds") List<String> excludeIds,
+        @Param("limit") int limit
+    );
+
+    @Query(value = "SELECT * FROM vault_media WHERE content_vault_id = :vaultId " +
+           "AND media_id NOT IN (SELECT media_id FROM fan_purchases WHERE fan_id = :fanId) " +
            "AND type = 'video' " +
            "AND (duration IS NULL OR duration <= :maxDuration) " +
            "ORDER BY RANDOM() LIMIT :limit", nativeQuery = true)

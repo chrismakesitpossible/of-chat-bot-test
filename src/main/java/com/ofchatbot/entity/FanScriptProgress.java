@@ -37,6 +37,10 @@ public class FanScriptProgress {
     @Column(name = "completed_at")
     private LocalDateTime completedAt;
 
+    /** When we last sent a shower PPV offer at this level (to avoid repeating same offer within cooldown). */
+    @Column(name = "last_shower_offer_sent_at")
+    private LocalDateTime lastShowerOfferSentAt;
+
     @Column(name = "updated_at", nullable = false)
     private LocalDateTime updatedAt;
 

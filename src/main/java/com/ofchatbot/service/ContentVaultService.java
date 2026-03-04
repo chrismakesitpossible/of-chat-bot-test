@@ -24,6 +24,7 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.Set;
 
 @Service
 @RequiredArgsConstructor
@@ -430,8 +431,13 @@ public class ContentVaultService {
     /**
      * Step 1: Media for a given price tier and category. Bundle size by price: 9.95=1, 29.95=3–4, 49.95=5–7, etc.
      * Uses SOLO as default category if no vault for requested category.
+     * @param excludeSentMediaIds when non-null and non-empty, never return media already sent to this fan in any PPV offer.
      */
     public List<VaultMedia> getMediaForPriceTier(Long fanId, ContentCategory category, double price) {
+        return getMediaForPriceTier(fanId, category, price, null);
+    }
+
+    public List<VaultMedia> getMediaForPriceTier(Long fanId, ContentCategory category, double price, Set<String> excludeSentMediaIds) {
         String cid = resolveVaultCreatorId();
         List<ContentVault> vaults = contentVaultRepository.findByCreatorIdAndContentCategory(cid, category.name());
         if (vaults.isEmpty() && category != ContentCategory.SOLO) {
@@ -443,10 +449,15 @@ public class ContentVaultService {
         }
         int wantItems = itemsForPrice(price);
         List<VaultMedia> bundle = new java.util.ArrayList<>();
+        boolean excludeSent = excludeSentMediaIds != null && !excludeSentMediaIds.isEmpty();
+        List<String> excludeList = excludeSent ? new ArrayList<>(excludeSentMediaIds) : null;
+
         for (ContentVault vault : vaults) {
             if (bundle.size() >= wantItems) break;
             int need = wantItems - bundle.size();
-            List<VaultMedia> more = vaultMediaRepository.findRandomUnpurchasedMediaMultiple(vault.getId(), fanId, need);
+            List<VaultMedia> more = excludeSent
+                ? vaultMediaRepository.findRandomUnpurchasedMediaMultipleExcluding(vault.getId(), fanId, excludeList, need)
+                : vaultMediaRepository.findRandomUnpurchasedMediaMultiple(vault.getId(), fanId, need);
             bundle.addAll(more);
         }
         if (bundle.isEmpty()) {
@@ -459,12 +470,16 @@ public class ContentVaultService {
 
     /**
      * Media for a given price tier and category, biased by fan interests (tags like "shower", "feet", "couple").
-     * Uses VaultMedia.tags/categories via VaultMediaRepository.findRandomUnpurchasedMediaByInterest.
      * Falls back to getMediaForPriceTier when no interest-based media is found.
+     * @param excludeSentMediaIds when non-null and non-empty, never return media already sent to this fan in any PPV offer.
      */
     public List<VaultMedia> getMediaForPriceTierPersonalized(Long fanId, ContentCategory category, double price, List<String> interests) {
+        return getMediaForPriceTierPersonalized(fanId, category, price, interests, null);
+    }
+
+    public List<VaultMedia> getMediaForPriceTierPersonalized(Long fanId, ContentCategory category, double price, List<String> interests, Set<String> excludeSentMediaIds) {
         if (interests == null || interests.isEmpty()) {
-            return getMediaForPriceTier(fanId, category, price);
+            return getMediaForPriceTier(fanId, category, price, excludeSentMediaIds);
         }
 
         String cid = resolveVaultCreatorId();
@@ -479,6 +494,8 @@ public class ContentVaultService {
 
         int wantItems = itemsForPrice(price);
         List<VaultMedia> bundle = new ArrayList<>();
+        boolean excludeSent = excludeSentMediaIds != null && !excludeSentMediaIds.isEmpty();
+        List<String> excludeList = excludeSent ? new ArrayList<>(excludeSentMediaIds) : null;
 
         for (ContentVault vault : vaults) {
             if (bundle.size() >= wantItems) break;
@@ -488,9 +505,9 @@ public class ContentVaultService {
             // Try to fill with interest-based media first.
             for (String interest : interests) {
                 if (need <= 0) break;
-                List<VaultMedia> interestMedia = vaultMediaRepository.findRandomUnpurchasedMediaByInterest(
-                    vault.getId(), fanId, interest, need
-                );
+                List<VaultMedia> interestMedia = excludeSent
+                    ? vaultMediaRepository.findRandomUnpurchasedMediaByInterestExcluding(vault.getId(), fanId, interest, excludeList, need)
+                    : vaultMediaRepository.findRandomUnpurchasedMediaByInterest(vault.getId(), fanId, interest, need);
                 if (!interestMedia.isEmpty()) {
                     bundle.addAll(interestMedia);
                     need = wantItems - bundle.size();
@@ -500,7 +517,9 @@ public class ContentVaultService {
 
             // If still short, fill remaining slots from random unpurchased media.
             if (need > 0) {
-                List<VaultMedia> more = vaultMediaRepository.findRandomUnpurchasedMediaMultiple(vault.getId(), fanId, need);
+                List<VaultMedia> more = excludeSent
+                    ? vaultMediaRepository.findRandomUnpurchasedMediaMultipleExcluding(vault.getId(), fanId, excludeList, need)
+                    : vaultMediaRepository.findRandomUnpurchasedMediaMultiple(vault.getId(), fanId, need);
                 bundle.addAll(more);
             }
         }

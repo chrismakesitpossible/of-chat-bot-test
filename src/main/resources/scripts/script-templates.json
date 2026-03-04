@@ -147,7 +147,7 @@
           "Offer something valuable to bring them back"
         ],
         "approaches": {
-          "playful_miss_you": "Light, playful tone - 'been a minute', 'where'd you go', casual check-in",
+          "playful_miss_you": "Light, playful tone - use their name when greeting (e.g. 'hey [name]... been a minute', 'where'd you go [name]'), casual check-in",
           "exclusive_offer": "Mention you have something special, create urgency, limited availability",
           "curiosity_hook": "Tease new content without revealing, make them curious",
           "no_pressure": "Keep it cool - you're not chasing, just checking in"

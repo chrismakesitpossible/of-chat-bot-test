@@ -236,6 +236,8 @@ public class OnlyFansChatbotService {
 
             // Detect explicit purchase intent once so we can drive both PPV and reply behaviour
             boolean explicitPurchaseIntent = hasExplicitPurchaseIntent(batchedMessageText);
+            // If they mentioned a price (e.g. "send for $60"), use it as minimum PPV tier
+            Double fanMentionedPrice = parseMentionedPrice(batchedMessageText);
             // Detect purchase complaints / scam concerns so we can pause sales and focus on fixing issues.
             boolean purchaseComplaint = isPurchaseComplaintOrScamConcern(batchedMessageText);
             
@@ -317,37 +319,32 @@ public class OnlyFansChatbotService {
                     log.info("Peak interest moment detected for fan {}: {}", fan.getId(), peakReason);
                     
                     if (shouldSendPPV) {
+                        // When fan explicitly asked for content/send/preview/$60, always use main PPV — never shower script.
                         if (explicitPurchaseIntent) {
-                            responseTimingService.scheduleDelayedPPVWithTyping(chatId, creator.getCreatorId(), () -> {
-                                if (showerScriptService.isOnShowerNotCompleted(fanForPpv.getId())) {
-                                    showerScriptService.sendShowerPPVOffer(fanForPpv, chatId, recentMessages);
-                                } else {
-                                    ppvService.sendPPVOffer(fanForPpv, state, conversation, chatId, recentMessages, specificOrNicheRequest, reengagingForPpv);
-                                }
-                            });
-                        } else {
-                            if (showerScriptService.isOnShowerNotCompleted(fan.getId())) {
-                                showerScriptService.sendShowerPPVOffer(fan, chatId, recentMessages);
-                            } else {
+                            final Double priceHint = fanMentionedPrice;
+                            responseTimingService.scheduleDelayedPPVWithTyping(chatId, creator.getCreatorId(), () ->
+                                ppvService.sendPPVOffer(fanForPpv, state, conversation, chatId, recentMessages, specificOrNicheRequest, reengagingForPpv, priceHint));
+                        } else if (showerScriptService.isOnShowerNotCompleted(fan.getId())) {
+                            if (!showerScriptService.sendShowerPPVOffer(fan, chatId, recentMessages)) {
                                 ppvService.sendPPVOffer(fan, state, conversation, chatId, recentMessages, specificOrNicheRequest, reengagingAfterCold);
                             }
-                        }
-                    }
-                } else if (shouldSendPPV) {
-                    if (explicitPurchaseIntent) {
-                        responseTimingService.scheduleDelayedPPVWithTyping(chatId, creator.getCreatorId(), () -> {
-                            if (showerScriptService.isOnShowerNotCompleted(fanForPpv.getId())) {
-                                showerScriptService.sendShowerPPVOffer(fanForPpv, chatId, recentMessages);
-                            } else {
-                                ppvService.sendPPVOffer(fanForPpv, state, conversation, chatId, recentMessages, specificOrNicheRequest, reengagingForPpv);
-                            }
-                        });
-                    } else {
-                        if (showerScriptService.isOnShowerNotCompleted(fan.getId())) {
-                            showerScriptService.sendShowerPPVOffer(fan, chatId, recentMessages);
                         } else {
                             ppvService.sendPPVOffer(fan, state, conversation, chatId, recentMessages, specificOrNicheRequest, reengagingAfterCold);
                         }
+                    }
+                } else if (shouldSendPPV) {
+                    // When fan explicitly asked for content/send/preview/$60, always use main PPV — never shower script.
+                    if (explicitPurchaseIntent) {
+                        final Double priceHint = fanMentionedPrice;
+                        responseTimingService.scheduleDelayedPPVWithTyping(chatId, creator.getCreatorId(), () -> {
+                            ppvService.sendPPVOffer(fanForPpv, state, conversation, chatId, recentMessages, specificOrNicheRequest, reengagingForPpv, priceHint);
+                        });
+                    } else if (showerScriptService.isOnShowerNotCompleted(fan.getId())) {
+                        if (!showerScriptService.sendShowerPPVOffer(fan, chatId, recentMessages)) {
+                            ppvService.sendPPVOffer(fan, state, conversation, chatId, recentMessages, specificOrNicheRequest, reengagingAfterCold);
+                        }
+                    } else {
+                        ppvService.sendPPVOffer(fan, state, conversation, chatId, recentMessages, specificOrNicheRequest, reengagingAfterCold);
                     }
                 }
                 
@@ -426,6 +423,23 @@ public class OnlyFansChatbotService {
         if (s.equals("true") || s.startsWith("true")) return true;
         if (s.equals("false") || s.startsWith("false")) return false;
         return false;
+    }
+
+    /** Parse a price mentioned by the fan (e.g. "send for $60", "60 dollars", "$20") for PPV tier hint. Returns null if none found. */
+    private Double parseMentionedPrice(String messageText) {
+        if (messageText == null || messageText.trim().isEmpty()) return null;
+        // $60, $20.95, 60 dollars, for 60, send for $60
+        Matcher m = Pattern.compile("\\$\\s*(\\d+(?:\\.\\d+)?)|(\\d+)\\s*(?:dollars?|bucks?|\\$)").matcher(messageText);
+        if (m.find()) {
+            String g = m.group(1) != null ? m.group(1) : m.group(2);
+            if (g != null) {
+                try {
+                    double v = Double.parseDouble(g);
+                    if (v >= 1 && v <= 1000) return v;
+                } catch (NumberFormatException ignored) { }
+            }
+        }
+        return null;
     }
 
     private boolean hasExplicitPurchaseIntent(String messageText) {

@@ -380,6 +380,8 @@ public class AnthropicService {
             "═══ CORE TRUTH ═══\n" +
             "You are %s. You are REAL. You're texting from your phone right now. You have a life, personality, moods, and imperfections. You're not trying to sound human — you ARE human. Every message should feel authentic, spontaneous, and natural.\n\n" +
             
+            "PERSONALIZATION: When you know the fan's username (it's in the Fan Profile), use it when greeting or addressing them — e.g. \"hey [username]\" or \"[name]...\" — instead of generic terms like \"hey stranger\", \"hey you\", or \"you disappear on me\". Using their name is warmer and more engaging. You can still use \"babe\" or other terms sometimes, but prefer their name for opens and check-ins when you have it.\n\n" +
+            
             "Trust your instincts. React naturally. Be yourself. Never break character.",
             creatorName, creatorName
         );
@@ -406,6 +408,7 @@ public class AnthropicService {
         if (fan.getIgUsername() != null) {
             prompt.append("- Instagram: @").append(fan.getIgUsername()).append("\n");
         }
+        prompt.append("\nPERSONALIZATION: When greeting or opening a message, use their username from the Fan Profile above (e.g. \"hey [username]\" or \"[username]...\"). Do NOT use \"hey stranger\", \"hey you\", or generic \"you disappear on me\"-style lines when their username is available — personalizing with their name is much more engaging.\n");
 
         prompt.append("\n═══ CONVERSATION STATE ═══\n");
         prompt.append("Current State: ").append(state.getCurrentState()).append("\n");
@@ -503,11 +506,18 @@ public class AnthropicService {
             }
 
             log.warn("Empty response from Anthropic API");
-            return "hey babe 😘";
+            return fallbackGreeting(fan);
         } catch (Exception e) {
             log.error("Failed to generate script-based response", e);
-            return "hey babe 😘";
+            return fallbackGreeting(fan);
         }
+    }
+
+    /** Fallback greeting using fan's username when available, otherwise generic. */
+    private String fallbackGreeting(Fan fan) {
+        String name = (fan != null && fan.getOnlyfansUsername() != null && !fan.getOnlyfansUsername().isBlank())
+            ? fan.getOnlyfansUsername() : "babe";
+        return "hey " + name + " 😘";
     }
 
     private String cleanResponse(String response) {

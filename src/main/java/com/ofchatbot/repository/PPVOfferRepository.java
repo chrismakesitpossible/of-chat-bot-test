@@ -13,6 +13,8 @@ import java.util.List;
 public interface PPVOfferRepository extends JpaRepository<PPVOffer, Long> {
     List<PPVOffer> findByFanIdAndPurchasedFalse(Long fanId);
 
+    List<PPVOffer> findAllByFanId(Long fanId);
+
     long countByFanId(Long fanId);
     
     List<PPVOffer> findByFanIdAndPurchasedTrue(Long fanId);

@@ -12,6 +12,7 @@ import org.springframework.context.annotation.Lazy;
 import org.springframework.stereotype.Service;
 
 import java.time.LocalDateTime;
+import java.time.temporal.ChronoUnit;
 import java.util.List;
 import java.util.stream.Collectors;
 
@@ -34,6 +35,9 @@ public class ShowerScriptService {
 
     @Value("${shower.script.force-all-fans:false}")
     private boolean forceAllFansOnShower;
+
+    /** Don't send the same shower level again within this many days (avoids repetitive "just got out of the shower" spam). */
+    private static final int SHOWER_OFFER_COOLDOWN_DAYS = 2;
 
     public ShowerScriptService(
             FanScriptProgressRepository fanScriptProgressRepository,
@@ -162,12 +166,20 @@ public class ShowerScriptService {
 
     /**
      * Send Shower PPV for the fan's current level. Call only when isOnShowerNotCompleted(fan.getId()).
+     * Returns false if we sent the same level within cooldown (caller can fall back to main PPV).
      */
     public boolean sendShowerPPVOffer(Fan fan, String chatId, List<Message> recentMessages) {
         FanScriptProgress progress = getOrCreateProgress(fan.getId());
         int level = progress.getCurrentLevel();
         if (level < 0 || level > 7) {
             log.warn("Shower script level out of range for fan {}: {}", fan.getId(), level);
+            return false;
+        }
+
+        // Avoid repeating the same shower offer within cooldown (stops "just got out of the shower" spam).
+        LocalDateTime lastSent = progress.getLastShowerOfferSentAt();
+        if (lastSent != null && ChronoUnit.DAYS.between(lastSent, LocalDateTime.now()) < SHOWER_OFFER_COOLDOWN_DAYS) {
+            log.info("Shower L{} offer for fan {} skipped (cooldown: sent {} days ago)", level, fan.getId(), ChronoUnit.DAYS.between(lastSent, LocalDateTime.now()));
             return false;
         }
 
@@ -192,6 +204,9 @@ public class ShowerScriptService {
             SCRIPT_ID_SHOWER,
             level
         );
+        progress.setLastShowerOfferSentAt(LocalDateTime.now());
+        fanScriptProgressRepository.save(progress);
+
         log.info("Sent Shower script L{} PPV to fan {} (${}, {} items)", level, fan.getId(), price, mediaIds.size());
 
         // Level 0 is free — no purchase event, so advance to L1 now so next offer is level 1

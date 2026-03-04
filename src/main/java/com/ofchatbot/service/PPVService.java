@@ -86,8 +86,13 @@ public class PPVService {
     /**
      * @param hasSpecificRequest true when fan asked for specific/niche content (price $49.95–$99.95).
      * @param reengagingAfterCold true when fan was inactive for several days and is now back ($9.95–$19.95 re-warm).
+     * @param fanMentionedPriceHint if fan said a price (e.g. "send for $60"), use at least this tier; null to ignore.
      */
     public void sendPPVOffer(Fan fan, ConversationState state, Conversation conversation, String chatId, List<Message> recentMessages, boolean hasSpecificRequest, boolean reengagingAfterCold) {
+        sendPPVOffer(fan, state, conversation, chatId, recentMessages, hasSpecificRequest, reengagingAfterCold, null);
+    }
+
+    public void sendPPVOffer(Fan fan, ConversationState state, Conversation conversation, String chatId, List<Message> recentMessages, boolean hasSpecificRequest, boolean reengagingAfterCold, Double fanMentionedPriceHint) {
         long offerCount = ppvOfferRepository.countByFanId(fan.getId());
         boolean hasPurchasedBefore = contentVaultService.hasFanMadeAnyPurchase(fan.getId());
 
@@ -108,26 +113,34 @@ public class PPVService {
             (int) purchasesInSession,
             reengagingAfterCold
         );
+        if (fanMentionedPriceHint != null && fanMentionedPriceHint > 0) {
+            double hinted = pricingLadderService.roundToLadder(fanMentionedPriceHint);
+            if (hinted > rawStartPrice) {
+                rawStartPrice = hinted;
+                log.info("Using fan-mentioned price hint ${} (rounded to ladder) for fan {}", hinted, fan.getId());
+            }
+        }
+        final double effectiveRawStartPrice = rawStartPrice;
 
         // If we've already sent several recent offers at this same price that were not purchased,
         // back off instead of sending yet another identical PPV.
         long samePriceRecentOffers = previousUnpurchased.stream()
-            .filter(o -> o.getPrice() != null && Math.abs(o.getPrice() - rawStartPrice) < 0.01)
+            .filter(o -> o.getPrice() != null && Math.abs(o.getPrice() - effectiveRawStartPrice) < 0.01)
             .count();
         if (samePriceRecentOffers >= 3) {
             log.info("Skipping PPV offer for fan {} at ${} to avoid repetitive spam ({} similar unpaid offers).",
-                fan.getId(), rawStartPrice, samePriceRecentOffers);
+                fan.getId(), effectiveRawStartPrice, samePriceRecentOffers);
             return;
         }
 
         ContentCategory category = chooseCategoryForFan(
             fan,
-            rawStartPrice,
+            effectiveRawStartPrice,
             hasSpecificRequest,
             purchasesInSession,
             hasPurchasedBefore
         );
-        double startPrice = pricingLadderService.roundToCategoryLadder(rawStartPrice, category);
+        double startPrice = pricingLadderService.roundToCategoryLadder(effectiveRawStartPrice, category);
         boolean isPeakMoment = peakInterestDetectionService.isPeakInterestMoment(state, recentMessages);
         if (isPeakMoment && startPrice < PricingLadderService.P_99_95) {
             if (startPrice <= PricingLadderService.P_9_95) startPrice = PricingLadderService.P_29_95;
@@ -211,13 +224,16 @@ public class PPVService {
             ? prioritizedInterests.subList(0, 3)
             : prioritizedInterests;
 
+        // Never reuse media already sent to this fan in any PPV offer — keep main PPV random and non-repeating.
+        Set<String> alreadySentMediaIds = getMediaIdsAlreadySentToFan(fan.getId());
+
         List<VaultMedia> mediaBundle = contentVaultService.getMediaForPriceTierPersonalized(
-            fan.getId(), category, startPrice, topInterests
+            fan.getId(), category, startPrice, topInterests, alreadySentMediaIds
         );
         if (mediaBundle.isEmpty()) {
             startPrice = PricingLadderService.P_9_95;
             mediaBundle = contentVaultService.getMediaForPriceTierPersonalized(
-                fan.getId(), category, startPrice, topInterests
+                fan.getId(), category, startPrice, topInterests, alreadySentMediaIds
             );
         }
         if (mediaBundle.isEmpty()) {
@@ -261,6 +277,21 @@ public class PPVService {
 
         log.info("Sent PPV to fan {}: ${}, {} items ({})", fan.getId(), startPrice, mediaBundle.size(),
             hasPurchasedBefore ? "returning" : "wallet test");
+    }
+
+    /** All media IDs ever sent to this fan in any PPV offer (purchased or not). Used so we never repeat the same photo/video. */
+    private Set<String> getMediaIdsAlreadySentToFan(Long fanId) {
+        List<PPVOffer> offers = ppvOfferRepository.findAllByFanId(fanId);
+        Set<String> sent = new HashSet<>();
+        for (PPVOffer o : offers) {
+            if (o.getMediaIds() != null && !o.getMediaIds().isBlank()) {
+                for (String id : o.getMediaIds().split(",")) {
+                    String t = id.trim();
+                    if (!t.isEmpty()) sent.add(t);
+                }
+            }
+        }
+        return sent;
     }
 
     private void sendFreeTeaser(Fan fan, ConversationState state, String chatId, List<Message> recentMessages) {
