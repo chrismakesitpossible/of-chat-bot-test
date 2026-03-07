@@ -5,6 +5,8 @@ import lombok.AllArgsConstructor;
 import lombok.Data;
 import lombok.NoArgsConstructor;
 
+import java.util.List;
+
 @Data
 @NoArgsConstructor
 @AllArgsConstructor
@@ -12,4 +14,6 @@ import lombok.NoArgsConstructor;
 public class OnlyFansSendMessageRequest {
     private String text;
     private String replyTo;
+    /** Creator tag(s) / release-form tag — required by OnlyFans API. */
+    private List<Long> rfTag;
 }

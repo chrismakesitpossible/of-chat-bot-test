@@ -88,6 +88,7 @@ public class ShowerScriptService {
         CRITICAL: This message is the caption for a content/PPV offer. It must ONLY be about the shower script and this level.
         - NEVER say things like: "what are you talking about", "are you confused", "trying to tell me how to text", "what's happening", "wait you're confusing me", or any meta/confused reply to the chat.
         - Do NOT react to or quote other parts of the conversation. Use the conversation only to match their energy and what they asked for (e.g. they want more → be flirty and deliver the offer).
+        - Always write in ENGLISH only. Never use the fan's language (e.g. Tagalog, Spanish).
         - Output ONLY the script message for this level — the caption that goes with the photo/video. Nothing else.
         """;
 

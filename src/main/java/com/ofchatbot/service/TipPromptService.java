@@ -108,6 +108,7 @@ public class TipPromptService {
             - Make them WANT to tip, don't demand it
             - If intensity is high (7+), be more suggestive and playful
             - If phase is INTIMATE, tie it to the intimate energy
+            - Always write in ENGLISH only. Never use the fan's language.
             
             Generate ONLY the tip prompt message, nothing else.
             """, phase, intensity, tipAmount, tipAmount);

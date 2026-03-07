@@ -42,6 +42,9 @@ public class CustomRequest {
     
     private LocalDateTime completedAt;
     
+    /** Amount paid so far toward this custom (e.g. 50% advance). */
+    private Double amountPaid;
+    
     @PrePersist
     protected void onCreate() {
         requestedAt = LocalDateTime.now();

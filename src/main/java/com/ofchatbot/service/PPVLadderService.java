@@ -146,6 +146,8 @@ public class PPVLadderService {
             - Use 1-2 emojis max
             - Match the intensity level
 
+            Always write in ENGLISH only. Never use the fan's language.
+
             Generate ONLY the message, nothing else.
             """, purchasedLevel, phase, intensity);
 
@@ -185,7 +187,9 @@ public class PPVLadderService {
             - Make it feel spontaneous, not salesy
             - Use 1-2 emojis max
             - Build on the momentum from their purchase
-            
+
+            Always write in ENGLISH only. Never use the fan's language.
+
             Generate ONLY the teaser message, nothing else.
             """, nextLevel, phase, intensity, levelHint);
 

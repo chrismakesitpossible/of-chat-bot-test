@@ -146,6 +146,7 @@ public class OrganicContentSuggestionService {
             - Make them curious and interested
             - If intensity is high (7+), be more suggestive
             - Reference their preferences if relevant
+            - Always write in ENGLISH only. Never use the fan's language.
             
             Generate ONLY the organic custom content suggestion, nothing else.
             """, phase, intensity, fanPreferences);

@@ -6,6 +6,7 @@ import com.ofchatbot.dto.OnlyFansWebhookPayload;
 import com.ofchatbot.entity.Conversation;
 import com.ofchatbot.entity.ConversationState;
 import com.ofchatbot.entity.Creator;
+import com.ofchatbot.entity.CustomRequest;
 import com.ofchatbot.entity.Fan;
 import com.ofchatbot.entity.Message;
 import lombok.RequiredArgsConstructor;
@@ -65,6 +66,9 @@ public class OnlyFansChatbotService {
                     newFan.setContactId(onlyfansUserId);
                     newFan.setOnlyfansUserId(onlyfansUserId);
                     newFan.setOnlyfansUsername(onlyfansUsername);
+                    if (user.getName() != null && !user.getName().isBlank()) {
+                        newFan.setOnlyfansDisplayName(user.getName().trim());
+                    }
                     newFan.setOnlyfansChatId(chatId);
                     newFan.setMessageCount(0);
                     newFan.setState("OPENING");
@@ -150,6 +154,9 @@ public class OnlyFansChatbotService {
                 fan.setContactId(onlyfansUserId);
                 fan.setOnlyfansUserId(onlyfansUserId);
                 fan.setOnlyfansUsername(onlyfansUsername);
+                if (fromUser.getName() != null && !fromUser.getName().isBlank()) {
+                    fan.setOnlyfansDisplayName(fromUser.getName().trim());
+                }
                 fan.setOnlyfansChatId(chatId);
                 fan.setMessageCount(1);
                 fan.setState("OPENING");
@@ -164,6 +171,10 @@ public class OnlyFansChatbotService {
                 reengagingAfterCold = isReengagingAfterCold(fan);
                 fan.setMessageCount(fan.getMessageCount() + 1);
                 fan.setLastUpdated(LocalDateTime.now());
+                fan.setOnlyfansUsername(onlyfansUsername);
+                if (fromUser.getName() != null && !fromUser.getName().isBlank()) {
+                    fan.setOnlyfansDisplayName(fromUser.getName().trim());
+                }
                 fan = fanService.saveFan(fan);
             }
 
@@ -351,7 +362,14 @@ public class OnlyFansChatbotService {
                 // When they're explicitly asking for content / another video,
                 // rely on the PPV flow instead of also kicking off a custom-request thread.
                 if (!explicitPurchaseIntent && isCustomRequest(batchedMessageText)) {
-                    handleCustomRequest(fan, batchedMessageText);
+                    CustomRequest pendingCustom = customRequestService.getPendingCustomRequest(fan.getId());
+                    if (pendingCustom != null && "pending".equals(pendingCustom.getStatus())) {
+                        handleCustomRequestFollowUp(fan, batchedMessageText);
+                    } else if (pendingCustom != null && ("quoted".equals(pendingCustom.getStatus()) || "advance_paid".equals(pendingCustom.getStatus()))) {
+                        // Already quoted or paid advance — don't start another custom
+                    } else {
+                        handleCustomRequest(fan, batchedMessageText);
+                    }
                 } else if (organicContentSuggestionService.shouldSuggestCustomContent(state, fan, batchedMessageText)) {
                     String recentConversationHistory = messageService.getConversationHistory(onlyfansUserId, 5);
                     organicContentSuggestionService.sendOrganicCustomContentSuggestion(fan, state, recentConversationHistory);
@@ -638,6 +656,7 @@ public class OnlyFansChatbotService {
             - Be flirty and excited about making something special for them
             - Use 1-2 emojis max
             - Make them feel special
+            - Always respond in ENGLISH only. Never use the fan's language (e.g. Tagalog, Spanish). Write in English.
 
             Generate ONLY the message asking for details, nothing else.
             """;
@@ -653,6 +672,17 @@ public class OnlyFansChatbotService {
         customRequestService.processCustomRequest(fan, messageText, "Pending details from fan");
 
         log.info("Initiated custom request conversation with fan {}", fan.getId());
+    }
+
+    /** Fan already has a pending custom (status pending) and sent a follow-up (e.g. details or duration). Send the price quote. */
+    private void handleCustomRequestFollowUp(Fan fan, String messageText) {
+        CustomRequest pending = customRequestService.getPendingCustomRequest(fan.getId());
+        if (pending == null || !"pending".equals(pending.getStatus())) {
+            return;
+        }
+        int durationMinutes = CustomRequestService.parseDurationFromMessage(messageText);
+        customRequestService.quotePrice(pending, durationMinutes, fan);
+        log.info("Sent custom quote to fan {}: {} minutes", fan.getId(), durationMinutes);
     }
 
     /** If fan replied within X min to at least one of our last 2–3 messages, mark as active (lastQuickReplyAt). */

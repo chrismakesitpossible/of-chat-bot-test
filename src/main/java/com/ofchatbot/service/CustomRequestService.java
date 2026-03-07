@@ -8,6 +8,9 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 
 import java.time.LocalDateTime;
+import java.util.Comparator;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
 @Service
 @RequiredArgsConstructor
@@ -17,11 +20,11 @@ public class CustomRequestService {
     private final CustomRequestRepository customRequestRepository;
     private final OnlyFansApiService onlyFansApiService;
     
-    private static final double PREMIUM_CUSTOM_PRICE = 1000.0;
-    private static final int PREMIUM_DURATION_MINUTES = 20;
-    private static final double BUDGET_CUSTOM_PRICE = 600.0;
-    private static final int BUDGET_DURATION_MINUTES = 6;
+    /** $100/minute. 6 min minimum; 15+ min = flat $1,000. */
     private static final double PRICE_PER_MINUTE = 100.0;
+    private static final int MIN_DURATION_MINUTES = 6;
+    private static final int LONG_FORM_MINUTES = 15;
+    private static final double LONG_FORM_PRICE = 1000.0;
     
     public CustomRequest processCustomRequest(Fan fan, String description, String requirements) {
         CustomRequest request = new CustomRequest();
@@ -38,7 +41,7 @@ public class CustomRequestService {
     }
     
     public void quotePrice(CustomRequest request, int durationMinutes, Fan fan) {
-        double quotedPrice = calculateCustomPrice(durationMinutes);
+        double quotedPrice = calculateCustomPrice(request, durationMinutes);
         
         request.setDurationMinutes(durationMinutes);
         request.setQuotedPrice(quotedPrice);
@@ -57,35 +60,33 @@ public class CustomRequestService {
     /** Custom (named video): min $49.95. Always above standard; name = personalisation premium. */
     private static final double CUSTOM_MIN_PRICE = 49.95;
 
-    public double calculateCustomPrice(int durationMinutes) {
-        double price;
-        if (durationMinutes >= PREMIUM_DURATION_MINUTES) {
-            price = PREMIUM_CUSTOM_PRICE;
-        } else if (durationMinutes >= 15) {
-            price = 1000.0;
-        } else if (durationMinutes >= BUDGET_DURATION_MINUTES) {
-            price = BUDGET_CUSTOM_PRICE;
-        } else {
-            price = durationMinutes * PRICE_PER_MINUTE;
+    /**
+     * Calculate custom price: $100/min, 6 min minimum ($600), 15+ min = $1,000 flat.
+     */
+    public double calculateCustomPrice(CustomRequest request, int durationMinutes) {
+        int effective = Math.max(MIN_DURATION_MINUTES, durationMinutes);
+        if (effective >= LONG_FORM_MINUTES) {
+            return LONG_FORM_PRICE;
         }
-        return Math.max(CUSTOM_MIN_PRICE, price);
+        return Math.max(CUSTOM_MIN_PRICE, effective * PRICE_PER_MINUTE);
+    }
+
+    /** Legacy: duration-only (no request). Uses same rules: 6 min min, 15+ = $1k. */
+    public double calculateCustomPrice(int durationMinutes) {
+        return calculateCustomPrice(null, durationMinutes);
     }
     
     private String buildQuoteMessage(int durationMinutes, double price) {
-        if (durationMinutes >= PREMIUM_DURATION_MINUTES) {
-            return String.format(
-                "For a %d-minute custom video, it's $%.0f 💕\n\n" +
-                "Just send the tip and I'll make something amazing for you 😘",
-                durationMinutes, price
-            );
-        } else {
-            return String.format(
-                "For a %d-minute custom, it would be $%.0f 💕\n\n" +
-                "Or if you want something longer and more special, I can do 20 minutes for $1000 😏\n\n" +
-                "Just send the tip when you're ready babe 😘",
-                durationMinutes, price
-            );
-        }
+        String durationText = durationMinutes >= LONG_FORM_MINUTES
+            ? LONG_FORM_MINUTES + "+ minutes"
+            : durationMinutes + " minutes";
+        return String.format(
+            "Custom is $100/min, 6 minutes minimum — so that would be $%.0f for %s 💕\n\n" +
+            "Or if you want something longer, 15+ minutes is $1,000.\n\n" +
+            "I need 50%% in advance to get started. Our chatting manager sees the chats — he'll sort it out and send the video when it's ready.\n\n" +
+            "Send half when you're ready babe 😘",
+            price, durationText
+        );
     }
     
     public void approveRequest(Long requestId) {
@@ -115,7 +116,62 @@ public class CustomRequestService {
 
     public boolean hasPendingCustomRequest(Long fanId) {
         return customRequestRepository.findByFanId(fanId).stream()
-            .anyMatch(r -> "pending".equals(r.getStatus()) || "quoted".equals(r.getStatus()));
+            .anyMatch(r -> "pending".equals(r.getStatus()) || "quoted".equals(r.getStatus()) || "advance_paid".equals(r.getStatus()));
+    }
+
+    /** Most recent custom request for fan that is pending, quoted, or advance_paid (for follow-up or quote). */
+    public CustomRequest getPendingCustomRequest(Long fanId) {
+        return customRequestRepository.findByFanId(fanId).stream()
+            .filter(r -> "pending".equals(r.getStatus()) || "quoted".equals(r.getStatus()) || "advance_paid".equals(r.getStatus()))
+            .max(Comparator.comparing(CustomRequest::getRequestedAt))
+            .orElse(null);
+    }
+
+    /** Most recent quoted or advance_paid custom for fan (used when a tip arrives to apply 50% advance). */
+    public CustomRequest getQuotedCustomRequestForFan(Long fanId) {
+        return customRequestRepository.findByFanId(fanId).stream()
+            .filter(r -> "quoted".equals(r.getStatus()) || "advance_paid".equals(r.getStatus()))
+            .max(Comparator.comparing(r -> r.getQuotedAt() != null ? r.getQuotedAt() : r.getRequestedAt()))
+            .orElse(null);
+    }
+
+    /** Parse duration from message (e.g. "5 min", "10 minutes"); default 6, clamp to 6–30. */
+    public static int parseDurationFromMessage(String message) {
+        if (message == null || message.isBlank()) {
+            return MIN_DURATION_MINUTES;
+        }
+        Matcher m = Pattern.compile("(\\d+)\\s*min(?:ute)?s?").matcher(message.trim().toLowerCase());
+        if (m.find()) {
+            int d = Integer.parseInt(m.group(1));
+            return Math.max(MIN_DURATION_MINUTES, Math.min(30, d));
+        }
+        return MIN_DURATION_MINUTES;
+    }
+
+    /**
+     * If fan has a quoted custom and tip is at least 50% of quoted price, record advance and send "coming soon" message.
+     * @return true if tip was applied as custom advance (then caller should not send generic tip thank you).
+     */
+    public boolean tryApplyTipToCustomAdvance(Fan fan, double tipAmount) {
+        CustomRequest request = getQuotedCustomRequestForFan(fan.getId());
+        if (request == null || !"quoted".equals(request.getStatus())) {
+            return false;
+        }
+        Double quoted = request.getQuotedPrice();
+        if (quoted == null || quoted <= 0) {
+            return false;
+        }
+        double half = quoted * 0.5;
+        if (tipAmount < half) {
+            return false;
+        }
+        request.setAmountPaid(tipAmount);
+        request.setStatus("advance_paid");
+        customRequestRepository.save(request);
+        String message = "Got it babe, it'll be ready soon — just be patient and our team will send it when it's done 😘";
+        onlyFansApiService.sendMessage(fan.getOnlyfansChatId(), message);
+        log.info("Recorded 50% advance (${}) for custom request {} for fan {}", tipAmount, request.getId(), fan.getId());
+        return true;
     }
 
     public CustomRequest getMostRecentCustomRequest(Long fanId) {

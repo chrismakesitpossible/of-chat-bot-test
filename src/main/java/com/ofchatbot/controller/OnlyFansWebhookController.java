@@ -33,6 +33,7 @@ public class OnlyFansWebhookController {
     private final AnthropicService anthropicService;
     private final MessageService messageService;
     private final PPVLadderService ppvLadderService;
+    private final CustomRequestService customRequestService;
 
     @PostMapping
     public ResponseEntity<Map<String, String>> handleOnlyFansWebhook(@RequestBody OnlyFansWebhookPayload webhook) {
@@ -227,7 +228,10 @@ public class OnlyFansWebhookController {
                 if (recordedTipAmount != null && recordedTipAmount > 0) {
                     scriptEngineService.recordPurchase(state, recordedTipAmount);
                     
-                    sendTipThankYou(fan, state, recordedTipAmount, creator);
+                    // If fan has a quoted custom and this tip is 50%+ advance, apply it and send "coming soon" instead of generic thank you.
+                    if (!customRequestService.tryApplyTipToCustomAdvance(fan, recordedTipAmount)) {
+                        sendTipThankYou(fan, state, recordedTipAmount, creator);
+                    }
                 }
 
                 log.info("Recorded tip for fan: {} - Amount: ${}", userId, recordedTipAmount);

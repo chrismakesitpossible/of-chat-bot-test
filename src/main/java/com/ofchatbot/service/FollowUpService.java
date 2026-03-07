@@ -139,7 +139,7 @@ public class FollowUpService {
         
         try {
             return anthropicService.generateResponse(
-                "You generate PPV follow-up messages only. Output only the message text. Never mention robots, bots, confusion, or meta-replies.",
+                "You generate PPV follow-up messages only. Output only the message text. Never mention robots, bots, confusion, or meta-replies. Always write in ENGLISH only.",
                 analysisPrompt,
                 null
             );
@@ -181,7 +181,7 @@ public class FollowUpService {
         
         try {
             return anthropicService.generateResponse(
-                "You generate guilt-trap follow-up messages only. Output only the message text. Never mention robots, bots, or meta-replies.",
+                "You generate guilt-trap follow-up messages only. Output only the message text. Never mention robots, bots, or meta-replies. Always write in ENGLISH only.",
                 analysisPrompt,
                 null
             );

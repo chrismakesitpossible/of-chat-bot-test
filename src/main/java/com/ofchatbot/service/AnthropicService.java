@@ -19,6 +19,7 @@ import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.regex.Pattern;
 
 @Service
 @RequiredArgsConstructor
@@ -80,6 +81,22 @@ public class AnthropicService {
                 || msg.contains("handshake") || msg.contains("closed"));
         }
         return true;
+    }
+
+    /** Username that looks like an ID (e.g. u55149270 or 55149270) — do not use in greetings. */
+    private static final Pattern ID_LIKE_USERNAME = Pattern.compile("^(u)?\\d+$", Pattern.CASE_INSENSITIVE);
+
+    /** Name to use when greeting the fan. Prefers display name; never uses ID-like username (e.g. u55149270). */
+    public static String getGreetingName(Fan fan) {
+        if (fan == null) return "babe";
+        if (fan.getOnlyfansDisplayName() != null && !fan.getOnlyfansDisplayName().isBlank()) {
+            return fan.getOnlyfansDisplayName().trim();
+        }
+        String username = fan.getOnlyfansUsername();
+        if (username != null && !username.isBlank() && !ID_LIKE_USERNAME.matcher(username.trim()).matches()) {
+            return username.trim();
+        }
+        return "babe";
     }
     
     public String generateResponse(List<Message> conversationHistory, String currentMessage) {
@@ -188,6 +205,7 @@ public class AnthropicService {
         context.append("Fan Profile:\n");
         if (fan != null) {
             context.append("- Username: ").append(fan.getOnlyfansUsername()).append("\n");
+            context.append("- Name to use when addressing: ").append(getGreetingName(fan)).append("\n");
             context.append("- Total Spending: $").append(fan.getTotalSpending()).append("\n");
             context.append("- Message Count: ").append(fan.getMessageCount()).append("\n");
             context.append("- State: ").append(fan.getState()).append("\n");
@@ -377,10 +395,12 @@ public class AnthropicService {
             
             "ONLYFANS CONTENT FILTER: OnlyFans blocks messages containing certain words and will reject your reply (400 error). Avoid explicit medical or graphic terms (e.g. enema, scat), illegal topics, and words that trigger platform filters. Stay flirty and suggestive but platform-safe.\n\n" +
             
+            "LANGUAGE: Always respond in ENGLISH only. Never reply in the fan's language (e.g. Tagalog, Spanish, French). Even if they write in another language, answer in English. Keep all your messages in English.\n\n" +
+            
             "═══ CORE TRUTH ═══\n" +
             "You are %s. You are REAL. You're texting from your phone right now. You have a life, personality, moods, and imperfections. You're not trying to sound human — you ARE human. Every message should feel authentic, spontaneous, and natural.\n\n" +
             
-            "PERSONALIZATION: When you know the fan's username (it's in the Fan Profile), use it when greeting or addressing them — e.g. \"hey [username]\" or \"[name]...\" — instead of generic terms like \"hey stranger\", \"hey you\", or \"you disappear on me\". Using their name is warmer and more engaging. You can still use \"babe\" or other terms sometimes, but prefer their name for opens and check-ins when you have it.\n\n" +
+            "PERSONALIZATION: When you know the fan's name (from Fan Profile \"Name to use when greeting\"), use it when greeting — e.g. \"hey [name]\" or \"[name]...\". NEVER use their user ID or an ID-like username (e.g. u55149270, u123) in greetings. If the name is \"babe\", use \"hey babe\". Do NOT use \"hey stranger\" or \"hey you\" when a name is available.\n\n" +
             
             "Trust your instincts. React naturally. Be yourself. Never break character.",
             creatorName, creatorName
@@ -402,13 +422,14 @@ public class AnthropicService {
         prompt.append("═══ CONVERSATION CONTEXT ═══\n");
         prompt.append("Fan Profile:\n");
         prompt.append("- Username: ").append(fan.getOnlyfansUsername()).append("\n");
+        prompt.append("- Name to use when greeting: ").append(getGreetingName(fan)).append("\n");
         prompt.append("- Total Spending: $").append(fan.getTotalSpending()).append("\n");
         prompt.append("- Message Count: ").append(fan.getMessageCount()).append("\n");
 
         if (fan.getIgUsername() != null) {
             prompt.append("- Instagram: @").append(fan.getIgUsername()).append("\n");
         }
-        prompt.append("\nPERSONALIZATION: When greeting or opening a message, use their username from the Fan Profile above (e.g. \"hey [username]\" or \"[username]...\"). Do NOT use \"hey stranger\", \"hey you\", or generic \"you disappear on me\"-style lines when their username is available — personalizing with their name is much more engaging.\n");
+        prompt.append("\nPERSONALIZATION: When greeting or opening a message, use ONLY the \"Name to use when greeting\" above (e.g. \"hey ").append(getGreetingName(fan)).append("\" or \"").append(getGreetingName(fan)).append("...\"). NEVER use their user ID or username if it looks like an ID (e.g. u55149270, u123). If the name is \"babe\", use \"hey babe\" or \"babe\". Do NOT use \"hey stranger\" or \"hey you\" when a name is available.\n");
 
         prompt.append("\n═══ CONVERSATION STATE ═══\n");
         prompt.append("Current State: ").append(state.getCurrentState()).append("\n");
@@ -513,10 +534,9 @@ public class AnthropicService {
         }
     }
 
-    /** Fallback greeting using fan's username when available, otherwise generic. */
+    /** Fallback greeting using greeting name (never ID-like username). */
     private String fallbackGreeting(Fan fan) {
-        String name = (fan != null && fan.getOnlyfansUsername() != null && !fan.getOnlyfansUsername().isBlank())
-            ? fan.getOnlyfansUsername() : "babe";
+        String name = getGreetingName(fan);
         return "hey " + name + " 😘";
     }
 

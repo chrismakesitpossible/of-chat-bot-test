@@ -179,6 +179,8 @@ public class PPVResponseService {
             - "What do you think? 😏"
             - "Did you like it babe? 💕"
             
+            Always write in ENGLISH only. Never use the fan's language.
+            
             Generate ONLY the follow-up message, nothing else.
             """, purchaseAmount, phase, intensity);
     }
@@ -208,6 +210,7 @@ public class PPVResponseService {
             - Make it feel spontaneous, not like a reminder
             - Match the current vibe
             
+            Always write in ENGLISH only. Never use the fan's language.
             
             Generate ONLY the reminder message, nothing else.
             """, offerPrice, phase, intensity);

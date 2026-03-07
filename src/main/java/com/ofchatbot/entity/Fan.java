@@ -29,6 +29,9 @@ public class Fan {
     
     private String onlyfansUsername;
     
+    /** Display name from OnlyFans (e.g. "John"); prefer this for greetings over ID-like username. */
+    private String onlyfansDisplayName;
+    
     private String onlyfansChatId;
     
     private Double totalSpending = 0.0;

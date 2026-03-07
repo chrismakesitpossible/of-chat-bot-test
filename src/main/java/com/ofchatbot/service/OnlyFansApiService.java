@@ -105,7 +105,13 @@ public class OnlyFansApiService {
         headers.set("Authorization", "Bearer " + apiKey);
         headers.setContentType(MediaType.APPLICATION_JSON);
         
-        OnlyFansSendMessageRequest request = new OnlyFansSendMessageRequest(sanitized, replyToMessageId);
+        List<Long> rfTag = null;
+        try {
+            rfTag = List.of(Long.parseLong(accountIdSegment));
+        } catch (NumberFormatException e) {
+            log.warn("onlyfans_account_id '{}' is not numeric; sending without rfTag (may cause 'Creator tag(s) missing' from API)", accountIdSegment);
+        }
+        OnlyFansSendMessageRequest request = new OnlyFansSendMessageRequest(sanitized, replyToMessageId, rfTag);
         HttpEntity<OnlyFansSendMessageRequest> httpRequest = new HttpEntity<>(request, headers);
         
         try {
