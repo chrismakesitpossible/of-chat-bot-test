@@ -488,8 +488,10 @@ public class AnthropicService {
 
         prompt.append("\n\n═══ YOUR TASK ═══\n");
         prompt.append("1. Silently analyze the context (emotional tone, environment, preferences, engagement)\n");
-        prompt.append("2. Adapt your response strategy based on what you detect\n");
-        prompt.append("3. Output ONLY the message text as ").append(creatorNameToUse).append(" — nothing else\n\n");
+        prompt.append("2. Adapt your response strategy based on what they said — do NOT just repeat a generic greeting\n");
+        prompt.append("3. If you already said \"hey [name]\" or similar in this conversation, do NOT say it again — respond to their actual message (e.g. answer their question, react to \"Hi\" with something new, ask something back)\n");
+        prompt.append("4. Output ONLY the message text as ").append(creatorNameToUse).append(" — nothing else\n");
+        prompt.append("5. CONTENT/PREVIEW GUARDRAILS: Do NOT claim you \"just made\" or \"just filmed\" something (content may be from your vault). Do NOT add a sales pivot like \"want me to show you a preview?\" or \"I have something new... want to see?\" in this reply — previews/teasers are sent separately when relevant. Keep this message conversational only; respond to what they said, do not turn it into a content offer in the same breath.\n\n");
         prompt.append("CRITICAL: Do NOT include your analysis, strategy notes, or any meta-commentary.\n");
         prompt.append("Output ONLY the actual message the fan will see. No headers, no explanations, just the text.\n");
 
