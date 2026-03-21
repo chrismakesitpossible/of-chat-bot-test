@@ -49,6 +49,13 @@ public class OnlyFansChatbotService {
     @Value("${pricing.cold-days:7}")
     private int coldDays = 7;
 
+    /** Decline cooldown: no new PPV offers for this many hours after fan declines (Issue #4.4). */
+    private static final int DECLINE_COOLDOWN_HOURS = 2;
+
+    private static final Pattern DECLINE_PATTERN = Pattern.compile(
+        "(?i)(\\bno\\b|not now|too expensive|too much|can'?t afford|pass\\b|nah\\b|nope\\b|maybe later|not interested|i'?m good)"
+    );
+
     public void processNewSubscription(OnlyFansWebhookPayload webhook, Creator creator) {
             try {
                 log.info("Processing new OnlyFans subscription for creator: {}", creator.getName());
@@ -132,6 +139,9 @@ public class OnlyFansChatbotService {
         return html.replaceAll("<[^>]*>", "").trim();
     }
 
+    /** Human takeover cooldown: bot stays silent this long after creator manually messages a fan. */
+    private static final long HUMAN_TAKEOVER_MINUTES = 30;
+
     public void processIncomingMessage(OnlyFansWebhookPayload webhook, Creator creator) {
         try {
             log.info("Processing incoming OnlyFans message for creator: {}", creator.getName());
@@ -145,6 +155,19 @@ public class OnlyFansChatbotService {
             String messageText = stripHtml(payload.getText());
 
             Optional<Fan> fanOpt = fanService.findByOnlyfansUserId(onlyfansUserId);
+
+            // Human takeover: if creator recently messaged this fan, stay silent (Issue #19)
+            if (fanOpt.isPresent()) {
+                LocalDateTime humanReplyAt = fanOpt.get().getLastHumanReplyAt();
+                if (humanReplyAt != null && ChronoUnit.MINUTES.between(humanReplyAt, LocalDateTime.now()) < HUMAN_TAKEOVER_MINUTES) {
+                    log.info("Human takeover active for fan {} — creator messaged {} min ago, bot staying silent",
+                        onlyfansUserId, ChronoUnit.MINUTES.between(humanReplyAt, LocalDateTime.now()));
+                    // Still save the incoming message for history
+                    messageService.saveMessage(creator.getCreatorId(), onlyfansUserId, "user", messageText,
+                        payload.getCreatedAt(), "onlyfans", payload.getId() != null ? String.valueOf(payload.getId()) : null);
+                    return;
+                }
+            }
             Fan fan;
             boolean reengagingAfterCold = false;
 
@@ -460,72 +483,36 @@ public class OnlyFansChatbotService {
         return null;
     }
 
+    // Regex classifiers replace API calls — saves 3-5 API calls per message (Issue #4)
+    private static final Pattern PURCHASE_INTENT_PATTERN = Pattern.compile(
+        "(?i)(send (me |it|them)|show me|got any|have any|what (do you |content|videos?|pics?|photos?)" +
+        "|i('ll| will| wanna| want to) (buy|pay|unlock|purchase|see)" +
+        "|how much|what('s| is) (the price|it cost)" +
+        "|another (one|vid|video|pic|photo)" +
+        "|more (content|videos?|pics?|photos?)" +
+        "|can i (see|get|buy|have)" +
+        "|\\$\\d+|send for)"
+    );
+
     private boolean hasExplicitPurchaseIntent(String messageText) {
-        if (messageText == null || messageText.trim().isEmpty()) {
-            log.debug("Empty message, no purchase intent detected");
-            return false;
-        }
-        
-        log.info("Analyzing purchase intent for message: '{}'", messageText);
-        
-        String analysisPrompt = String.format(
-            "You are a PURCHASE INTENT classifier. Output ONLY the word true or false.\n\n" +
-            "MESSAGE: \"%s\"\n\n" +
-            "Answer TRUE if the user: asks for videos/photos/content, asks what you have/offer, wants to buy or see paid content, asks about pricing, or any request for content.\n" +
-            "Answer FALSE only if the message has nothing to do with content or buying (e.g. just 'hi' or off-topic).\n\n" +
-            "Examples: 'got any videos?' = true. 'hey you got any videos for me?' = true. 'what content do you have?' = true. 'hi' = false.\n\n" +
-            "Your one-word answer:",
-            messageText.replace("\"", "\\\""));
-        
-        try {
-            log.info("Sending EXPERT purchase intent analysis to AI for: '{}'", messageText);
-            String aiResult = anthropicService.generateClassifierResponse(
-                "You are a binary classifier. Reply with exactly one word: true or false. Nothing else.",
-                analysisPrompt,
-                10
-            );
-            
-            boolean hasIntent = parseBooleanFromAiResponse(aiResult);
-            log.info("EXPERT PURCHASE INTENT RESULT: {} -> {} for message: '{}'", aiResult, hasIntent, messageText);
-            return hasIntent;
-            
-        } catch (Exception e) {
-            log.error("Failed to analyze purchase intent with AI for message: '{}'", messageText, e);
-            return false;
-        }
+        if (messageText == null || messageText.trim().isEmpty()) return false;
+        boolean result = PURCHASE_INTENT_PATTERN.matcher(messageText).find();
+        if (result) log.info("Purchase intent detected (regex) for: '{}'", messageText);
+        return result;
     }
 
+    private static final Pattern COMPLAINT_PATTERN = Pattern.compile(
+        "(?i)(scam|fake|didn'?t (receive|get)|never (got|received)" +
+        "|chargeback|dispute|report (you|this)" +
+        "|rip.?off|where('s| is) (my|the) (content|video|pic|photo|set)" +
+        "|still waiting|paid but|paid and|i paid|my money)"
+    );
+
     private boolean isPurchaseComplaintOrScamConcern(String messageText) {
-        if (messageText == null || messageText.trim().isEmpty()) {
-            return false;
-        }
-        log.info("Analyzing purchase complaint / scam concern for message: '{}'", messageText);
-
-        String analysisPrompt = String.format(
-            "You are a classifier for purchase COMPLAINTS and SCAM concerns. Output ONLY 'true' or 'false'.\n\n" +
-            "MESSAGE: \"%s\"\n\n" +
-            "Answer TRUE if the user:\n" +
-            "- Says they paid but did not receive what they paid for\n" +
-            "- Mentions scam, being scammed, or thinking the page is fake\n" +
-            "- Repeatedly says they are still waiting for content or photos they bought\n" +
-            "- Says they will report, dispute, or chargeback because of missing content\n" +
-            "Answer FALSE for normal price questions, normal hesitation, or generic complaints.\n\n" +
-            "Your one-word answer:",
-            messageText.replace("\"", "\\\""));
-
-        try {
-            String aiResult = anthropicService.generateClassifierResponse(
-                "You are a binary classifier. Reply with exactly one word: true or false. Nothing else.",
-                analysisPrompt,
-                10
-            );
-            boolean result = parseBooleanFromAiResponse(aiResult);
-            log.info("Purchase complaint analysis result: {} -> {} for message: '{}'", aiResult, result, messageText);
-            return result;
-        } catch (Exception e) {
-            log.error("Failed to analyze purchase complaint for message: '{}'", messageText, e);
-            return false;
-        }
+        if (messageText == null || messageText.trim().isEmpty()) return false;
+        boolean result = COMPLAINT_PATTERN.matcher(messageText).find();
+        if (result) log.info("Purchase complaint detected (regex) for: '{}'", messageText);
+        return result;
     }
 
     private void handlePurchaseComplaint(Fan fan, String messageText) {
@@ -562,7 +549,20 @@ public class OnlyFansChatbotService {
             log.info("Explicit purchase intent detected, overriding PPV restrictions");
             return true;
         }
-        
+
+        // Decline cooldown: if fan just declined, back off (Issue #4.4)
+        if (DECLINE_PATTERN.matcher(messageText).find()) {
+            log.info("Fan declined PPV — setting {}-hour cooldown", DECLINE_COOLDOWN_HOURS);
+            state.setLastPurchaseTime(LocalDateTime.now()); // reuse field as cooldown marker
+            return false;
+        }
+        if (state.getLastPurchaseTime() != null &&
+            ChronoUnit.HOURS.between(state.getLastPurchaseTime(), LocalDateTime.now()) < DECLINE_COOLDOWN_HOURS &&
+            (state.getTotalSpent() == null || state.getTotalSpent() == 0)) {
+            log.info("PPV decline cooldown active — skipping offer");
+            return false;
+        }
+
         if (state.getMessageCount() < 5) {
             return false;
         }
@@ -580,70 +580,26 @@ public class OnlyFansChatbotService {
                 return true;
             }
         }
-        
+
         return false;
     }
     
     private boolean isMediaRequest(String messageText) {
-            log.info("Analyzing media request for message: '{}'", messageText);
-            
-            // Use AI to determine if this is requesting media content
-            String analysisPrompt = String.format(
-            "Analyze this message for media/content request intent.\n\n" +
-            "Message: \"%s\"\n\n" +
-            "Determine if this message is requesting:\n" +
-            "1. Photos/videos/content to be sent\n" +
-            "2. Wants to see creator content\n" +
-            "3. Asking for specific media types\n\n" +
-            "Return ONLY: true or false",
-            messageText.replace("\"", "\\\""));
-        
-        try {
-            log.info("Sending media request analysis to AI for: '{}'", messageText);
-            String aiResult = anthropicService.generateResponse(
-                "You are a media request detector. Analyze messages and return only 'true' or 'false'.",
-                analysisPrompt,
-                null
-            );
-            
-            String cleanResult = aiResult.toLowerCase().trim();
-            boolean isMedia = cleanResult.contains("true") && !cleanResult.contains("false");
-            
-            log.info("Media request analysis result: {} -> {} for message: '{}'", aiResult, isMedia, messageText);
-            return isMedia;
-            
-        } catch (Exception e) {
-            log.error("Failed to analyze media request with AI for message: '{}'", messageText, e);
-            return false;
-        }
+        // Reuse purchase intent pattern — media requests are a subset of purchase intent
+        return hasExplicitPurchaseIntent(messageText);
     }
     
+    private static final Pattern CUSTOM_REQUEST_PATTERN = Pattern.compile(
+        "(?i)(custom|personali[sz]ed|make (me |something)|just for me" +
+        "|say my name|with my name|can you (make|film|record|do)" +
+        "|specific (content|video)|request a video)"
+    );
+
     private boolean isCustomRequest(String messageText) {
-        log.info("Analyzing custom request for message: '{}'", messageText);
-        
-        String analysisPrompt = String.format(
-            "Is this message asking for custom/personalized content, or asking what content/videos you have (interest in content)?\n\n" +
-            "Message: \"%s\"\n\n" +
-            "Answer true if: they ask for custom content, personalized content, specific content for them, OR they ask what you have / got any videos / what content - that shows interest we can turn into a custom or PPV offer. Answer false only for generic chat with no content interest.\n\n" +
-            "Output ONLY one word: true or false",
-            messageText.replace("\"", "\\\""));
-        
-        try {
-            log.info("Sending custom request analysis to AI for: '{}'", messageText);
-            String aiResult = anthropicService.generateClassifierResponse(
-                "You are a binary classifier. Reply with exactly one word: true or false. Nothing else.",
-                analysisPrompt,
-                10
-            );
-            
-            boolean isCustom = parseBooleanFromAiResponse(aiResult);
-            log.info("Custom request analysis result: {} -> {} for message: '{}'", aiResult, isCustom, messageText);
-            return isCustom;
-            
-        } catch (Exception e) {
-            log.error("Failed to analyze custom request with AI for message: '{}'", messageText, e);
-            return false;
-        }
+        if (messageText == null || messageText.trim().isEmpty()) return false;
+        boolean result = CUSTOM_REQUEST_PATTERN.matcher(messageText).find();
+        if (result) log.info("Custom request detected (regex) for: '{}'", messageText);
+        return result;
     }
 
     private void handleCustomRequest(Fan fan, String messageText) {

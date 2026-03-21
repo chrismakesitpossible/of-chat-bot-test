@@ -72,8 +72,19 @@ public class ReEngagementService {
         
         String conversationHistory = messageService.getConversationHistory(fan.getOnlyfansUserId(), 5);
         
+        // Build real context instead of passing literal "Re-engaging inactive fan" (Issue #8)
+        long daysInactive = ChronoUnit.DAYS.between(
+            fan.getLastUpdated() != null ? fan.getLastUpdated() : LocalDateTime.now().minusDays(14),
+            LocalDateTime.now()
+        );
+        String contextMessage = String.format(
+            "[SYSTEM: This fan has been inactive for %d days. Send a warm, natural re-engagement message. " +
+            "Reference past conversation if history is available. Do NOT mention how long they've been gone explicitly.]",
+            daysInactive
+        );
+
         String reEngagementMessage = anthropicService.generateScriptBasedResponse(
-            "Re-engaging inactive fan",
+            contextMessage,
             conversationHistory,
             fan,
             state,

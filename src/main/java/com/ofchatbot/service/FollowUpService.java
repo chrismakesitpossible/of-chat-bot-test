@@ -79,29 +79,6 @@ public class FollowUpService {
         log.info("Sent first follow-up for offer {} to fan {}", offer.getId(), fan.getId());
     }
     
-    private void sendGuiltTrap(PPVOffer offer) {
-        Fan fan = fanRepository.findById(offer.getFanId()).orElse(null);
-        if (fan == null) {
-            log.warn("Fan not found for offer {}", offer.getId());
-            return;
-        }
-        
-        Conversation conversation = conversationRepository.findByFanId(fan.getId()).stream().findFirst().orElse(null);
-        if (conversation == null) {
-            log.warn("Conversation not found for fan {}", fan.getId());
-            return;
-        }
-        
-        String guiltTrapMessage = generateGuiltTrap(offer, conversation);
-        
-        onlyFansApiService.sendMessage(fan.getOnlyfansChatId(), guiltTrapMessage);
-        
-        offer.setFollowUpCount(2);
-        ppvOfferRepository.save(offer);
-        
-        log.info("Sent guilt trap for offer {} to fan {}", offer.getId(), fan.getId());
-    }
-    
     private String generateNaturalFollowUp(PPVOffer offer, Conversation conversation) {
         String conversationContext = "No conversation history";
         if (conversation != null) {
@@ -149,45 +126,4 @@ public class FollowUpService {
         }
     }
     
-    private String generateGuiltTrap(PPVOffer offer, Conversation conversation) {
-        String conversationContext = "No conversation history";
-        if (conversation != null) {
-            try {
-                String history = messageService.getConversationHistory(conversation.getContactId(), 50);
-                if (history != null && !history.isBlank()) {
-                    conversationContext = history;
-                }
-            } catch (Exception e) {
-                log.warn("Failed to load conversation history for conversation {}", conversation.getId(), e);
-            }
-        }
-
-        String analysisPrompt = String.format(
-            "Generate a guilt trap message for a PPV offer (sent 8-10 min ago, they haven't unlocked).\n\n" +
-            "Offer Details:\n" +
-            "- Level: %d\n" +
-            "- Price: $%.2f\n\n" +
-            "Conversation Context (use only for tone; do NOT react to or quote specific lines):\n%s\n\n" +
-            "CRITICAL: The message must ONLY be about the offer and feeling disappointed they haven't unlocked. NEVER mention robots, bots, automation, or meta replies.\n" +
-            "Generate a SHORT emotional message that:\n" +
-            "- Makes them feel guilty for not responding\n" +
-            "- Creates FOMO or missing out\n" +
-            "- Sounds genuinely disappointed\n" +
-            "Respond with ONLY the message text.",
-            offer.getLevel(),
-            offer.getPrice(),
-            conversationContext
-        );
-        
-        try {
-            return anthropicService.generateResponse(
-                "You generate guilt-trap follow-up messages only. Output only the message text. Never mention robots, bots, or meta-replies. Always write in ENGLISH only.",
-                analysisPrompt,
-                null
-            );
-        } catch (Exception e) {
-            log.error("Failed to generate guilt trap message", e);
-            return "I made this just for you but okay... 💔";
-        }
-    }
 }

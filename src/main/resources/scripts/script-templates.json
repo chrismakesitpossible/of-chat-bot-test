@@ -22,8 +22,8 @@
         ]
       }
     },
-    "FREE_TEASE": {
-      "name": "Free Tease Messages",
+    "TEASE": {
+      "name": "Tease Messages",
       "purpose": "Build goodwill and demonstrate value",
       "timing": "After welcome, before first upsell",
       "strategy": {

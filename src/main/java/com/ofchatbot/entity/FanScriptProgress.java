@@ -41,6 +41,10 @@ public class FanScriptProgress {
     @Column(name = "last_shower_offer_sent_at")
     private LocalDateTime lastShowerOfferSentAt;
 
+    /** How many times we've sent a PPV at the current level without the fan purchasing. Max 2 before abandoning (Issue #20). */
+    @Column(name = "attempts_at_current_level")
+    private Integer attemptsAtCurrentLevel = 0;
+
     @Column(name = "updated_at", nullable = false)
     private LocalDateTime updatedAt;
 

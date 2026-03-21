@@ -42,3 +42,7 @@ build/
 
 # Local / external toolkit
 /digital-patron-toolkit-main
+
+# Conversation data (PII)
+*.csv
+csv.file

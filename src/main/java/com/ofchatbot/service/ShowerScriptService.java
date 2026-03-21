@@ -25,7 +25,9 @@ public class ShowerScriptService {
 
     public static final String SCRIPT_ID_SHOWER = "S01";
 
+    // L0 and L7 are text-only (no media) — prices only apply to L1-L6
     private static final double[] PRICES = { 0, 3, 6, 9, 12, 15, 20, 0 }; // L0–L7
+    private static final boolean[] TEXT_ONLY = { true, false, false, false, false, false, false, true }; // L0 & L7 = text only
 
     private final FanScriptProgressRepository fanScriptProgressRepository;
     private final ContentVaultService contentVaultService;
@@ -38,6 +40,9 @@ public class ShowerScriptService {
 
     /** Don't send the same shower level again within this many days (avoids repetitive "just got out of the shower" spam). */
     private static final int SHOWER_OFFER_COOLDOWN_DAYS = 2;
+
+    /** Max attempts at any single level before abandoning the shower script for this fan (Issue #20). */
+    private static final int MAX_ATTEMPTS_PER_LEVEL = 2;
 
     public ShowerScriptService(
             FanScriptProgressRepository fanScriptProgressRepository,
@@ -177,6 +182,15 @@ public class ShowerScriptService {
             return false;
         }
 
+        // Max 2 attempts per level — if fan isn't buying, stop pushing (Issue #20)
+        int attempts = progress.getAttemptsAtCurrentLevel() != null ? progress.getAttemptsAtCurrentLevel() : 0;
+        if (attempts >= MAX_ATTEMPTS_PER_LEVEL) {
+            log.info("Shower L{} abandoned for fan {} after {} attempts — marking script completed", level, fan.getId(), attempts);
+            progress.setCompletedAt(LocalDateTime.now());
+            fanScriptProgressRepository.save(progress);
+            return false;
+        }
+
         // Avoid repeating the same shower offer within cooldown (stops "just got out of the shower" spam).
         LocalDateTime lastSent = progress.getLastShowerOfferSentAt();
         if (lastSent != null && ChronoUnit.DAYS.between(lastSent, LocalDateTime.now()) < SHOWER_OFFER_COOLDOWN_DAYS) {
@@ -184,37 +198,40 @@ public class ShowerScriptService {
             return false;
         }
 
-        List<VaultMedia> media = getMediaForLevel(fan.getCreatorId(), level, fan.getId());
-        if (media.isEmpty()) {
-            log.warn("No media for Shower level {} for fan {}", level, fan.getId());
-            return false;
-        }
-
         double price = getPriceForLevel(level);
         String message = generateShowerMessage(level, recentMessages);
-        List<String> mediaIds = media.stream().map(VaultMedia::getMediaId).toList();
 
-        ppvService.sendAndTrackPPV(
-            chatId,
-            fan.getId(),
-            message,
-            price,
-            mediaIds,
-            "SOLO",
-            level,
-            SCRIPT_ID_SHOWER,
-            level
-        );
-        progress.setLastShowerOfferSentAt(LocalDateTime.now());
-        fanScriptProgressRepository.save(progress);
-
-        log.info("Sent Shower script L{} PPV to fan {} (${}, {} items)", level, fan.getId(), price, mediaIds.size());
-
-        // Level 0 is free — no purchase event, so advance to L1 now so next offer is level 1
-        if (level == 0) {
-            progress.setCurrentLevel(1);
+        // L0 and L7 are text-only — no media, no PPV (Issue #1.2)
+        if (TEXT_ONLY[level]) {
+            onlyFansApiService.sendMessage(chatId, message);
+            progress.setLastShowerOfferSentAt(LocalDateTime.now());
+            progress.setAttemptsAtCurrentLevel(0); // reset on advance
+            progress.setCurrentLevel(level + 1);
             fanScriptProgressRepository.save(progress);
-            log.info("Advanced fan {} to Shower level 1 (L0 was free)", fan.getId());
+            log.info("Sent text-only Shower L{} to fan {} (no media)", level, fan.getId());
+        } else {
+            List<VaultMedia> media = getMediaForLevel(fan.getCreatorId(), level, fan.getId());
+            if (media.isEmpty()) {
+                log.warn("No media for Shower level {} for fan {}", level, fan.getId());
+                return false;
+            }
+            List<String> mediaIds = media.stream().map(VaultMedia::getMediaId).toList();
+
+            ppvService.sendAndTrackPPV(
+                chatId,
+                fan.getId(),
+                message,
+                price,
+                mediaIds,
+                "SOLO",
+                level,
+                SCRIPT_ID_SHOWER,
+                level
+            );
+            progress.setLastShowerOfferSentAt(LocalDateTime.now());
+            progress.setAttemptsAtCurrentLevel(attempts + 1);
+            fanScriptProgressRepository.save(progress);
+            log.info("Sent Shower script L{} PPV to fan {} (${}, {} items)", level, fan.getId(), price, mediaIds.size());
         }
         return true;
     }
@@ -228,6 +245,7 @@ public class ShowerScriptService {
 
         int newLevel = purchasedLevel + 1;
         progress.setCurrentLevel(newLevel);
+        progress.setAttemptsAtCurrentLevel(0); // reset on purchase
         fanScriptProgressRepository.save(progress);
 
         if (newLevel == 7) {

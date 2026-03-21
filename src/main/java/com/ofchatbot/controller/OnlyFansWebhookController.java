@@ -58,6 +58,11 @@ public class OnlyFansWebhookController {
 
                         case "messages.received":
                             String fanId = webhook.getPayload().getFromUser().getId().toString();
+                            // Human takeover: if creator sent this message, mark the fan and skip bot (Issue #19)
+                            if (fanId.equals(accountId)) {
+                                handleCreatorSentMessage(webhook, creator);
+                                break;
+                            }
                             messageBatchingService.handleIncomingMessage(fanId, () -> {
                                 onlyFansChatbotService.processIncomingMessage(webhook, creator);
                             });
@@ -295,6 +300,34 @@ public class OnlyFansWebhookController {
             }
         }
         return null;
+    }
+
+    /**
+     * Creator manually sent a message to a fan — mark lastHumanReplyAt so bot stays silent 30 min (Issue #19).
+     * We look up the fan by chat ID (the payload text/context may reference the recipient).
+     */
+    private void handleCreatorSentMessage(OnlyFansWebhookPayload webhook, Creator creator) {
+        try {
+            // The payload user_id or other fields may identify the recipient;
+            // try to find the fan this chat belongs to via the webhook's user_id field
+            String recipientId = webhook.getPayload().getUser_id();
+            if (recipientId == null || recipientId.isBlank()) {
+                log.info("Creator sent message but no recipient ID in payload — skipping human takeover mark");
+                return;
+            }
+            java.util.Optional<Fan> fanOpt = fanService.findByOnlyfansUserId(recipientId);
+            if (fanOpt.isPresent()) {
+                Fan fan = fanOpt.get();
+                fan.setLastHumanReplyAt(java.time.LocalDateTime.now());
+                fanService.saveFan(fan);
+                log.info("Human takeover: creator {} manually messaged fan {} — bot silent 30 min",
+                    creator.getCreatorId(), fan.getId());
+            } else {
+                log.info("Creator sent message to unknown user_id {}, skipping", recipientId);
+            }
+        } catch (Exception e) {
+            log.error("Error handling creator-sent message for human takeover", e);
+        }
     }
 
     @GetMapping("/health")

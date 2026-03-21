@@ -77,15 +77,10 @@ public class CustomRequestService {
     }
     
     private String buildQuoteMessage(int durationMinutes, double price) {
-        String durationText = durationMinutes >= LONG_FORM_MINUTES
-            ? LONG_FORM_MINUTES + "+ minutes"
-            : durationMinutes + " minutes";
+        // Short, natural, creator voice — no "chatting manager" or "our team" (Issue #10)
         return String.format(
-            "Custom is $100/min, 6 minutes minimum — so that would be $%.0f for %s 💕\n\n" +
-            "Or if you want something longer, 15+ minutes is $1,000.\n\n" +
-            "I need 50%% in advance to get started. Our chatting manager sees the chats — he'll sort it out and send the video when it's ready.\n\n" +
-            "Send half when you're ready babe 😘",
-            price, durationText
+            "custom vids are $%.0f for %d min 💕 i need half upfront to get started babe, send a tip when you're ready 😘",
+            price, durationMinutes
         );
     }
     
@@ -168,7 +163,7 @@ public class CustomRequestService {
         request.setAmountPaid(tipAmount);
         request.setStatus("advance_paid");
         customRequestRepository.save(request);
-        String message = "Got it babe, it'll be ready soon — just be patient and our team will send it when it's done 😘";
+        String message = "got it babe, i'll have it ready for you soon 😘";
         onlyFansApiService.sendMessage(fan.getOnlyfansChatId(), message);
         log.info("Recorded 50% advance (${}) for custom request {} for fan {}", tipAmount, request.getId(), fan.getId());
         return true;

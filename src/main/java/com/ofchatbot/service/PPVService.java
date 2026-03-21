@@ -141,14 +141,7 @@ public class PPVService {
             hasPurchasedBefore
         );
         double startPrice = pricingLadderService.roundToCategoryLadder(effectiveRawStartPrice, category);
-        boolean isPeakMoment = peakInterestDetectionService.isPeakInterestMoment(state, recentMessages);
-        if (isPeakMoment && startPrice < PricingLadderService.P_99_95) {
-            if (startPrice <= PricingLadderService.P_9_95) startPrice = PricingLadderService.P_29_95;
-            else if (startPrice <= PricingLadderService.P_29_95) startPrice = PricingLadderService.P_49_95;
-            else if (startPrice <= PricingLadderService.P_49_95) startPrice = PricingLadderService.P_99_95;
-            startPrice = pricingLadderService.roundToCategoryLadder(startPrice, category);
-            log.info("Bumped price to ${} due to peak interest", startPrice);
-        }
+        // Peak interest detection kept for analytics only — no price bumps (Issue #5.2)
 
         // Extract/update fan interests from the conversation so we can both personalize content selection
         // (e.g. "shower" -> SHOWER SCRIPT tags) and pass interests into the PPV pitch prompt.
@@ -295,15 +288,11 @@ public class PPVService {
     }
 
     private void sendFreeTeaser(Fan fan, ConversationState state, String chatId, List<Message> recentMessages) {
-        VaultMedia media = contentVaultService.getTeaserMedia(fan.getId());
-        if (media == null) {
-            log.warn("No teaser media for fan {}", fan.getId());
-            return;
-        }
-        String teaserMessage = generatePPVPitchByPrice(PricingLadderService.FREE, state, recentMessages, 1, "");
-        sendPPVMessage(chatId, teaserMessage, 0.0, Arrays.asList(media.getMediaId()), null);
-        trackOffer(fan.getId(), 0, ContentCategory.TEASER.name(), 0.0, media.getMediaId());
-        log.info("Sent FREE teaser to fan {}", fan.getId());
+        // Text-only tease — never send real media for free (Issue #1.1)
+        String teaserMessage = generatePPVPitchByPrice(PricingLadderService.FREE, state, recentMessages, 0, "");
+        onlyFansApiService.sendMessage(chatId, teaserMessage);
+        trackOffer(fan.getId(), 0, ContentCategory.TEASER.name(), 0.0, null);
+        log.info("Sent text-only teaser to fan {} (no free media)", fan.getId());
     }
 
     private String generatePPVPitchByPrice(double price, ConversationState state, List<Message> recentMessages, int itemCount, String personalizationContext) {
@@ -349,6 +338,13 @@ public class PPVService {
         headers.setContentType(MediaType.APPLICATION_JSON);
 
         Integer apiPrice = price == null ? null : (int) Math.round(price);
+        // GUARD: Never send media for free — minimum $3 (OF platform minimum)
+        if (mediaIds != null && !mediaIds.isEmpty()) {
+            if (apiPrice == null || apiPrice < 3) {
+                log.error("Blocked $0 media send to chat {}. Forcing minimum $3.", chatId);
+                apiPrice = 3;
+            }
+        }
         if (apiPrice != null && apiPrice > 0 && apiPrice < 3) {
             apiPrice = 3;
         }

@@ -62,6 +62,9 @@ public class Fan {
 
     /** True after first paid PPV unlock (wallet test passed). */
     private Boolean passedWalletTest = false;
+
+    /** Set when the human creator manually messages this fan; bot stays silent for 30 min. */
+    private LocalDateTime lastHumanReplyAt;
     
     public String getOnlyfansChatId() {
         return onlyfansChatId;

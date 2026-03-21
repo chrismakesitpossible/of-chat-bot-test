@@ -111,7 +111,7 @@ public class ResponseTimingService {
 
     private long calculateInitialDelay(ConversationState state, Fan fan) {
         int baseDelaySeconds;
-        
+
         long minutesSinceLastMessage = ChronoUnit.MINUTES.between(
                 fan.getLastUpdated() != null ? fan.getLastUpdated() : LocalDateTime.now().minusHours(1),
                 LocalDateTime.now()
@@ -124,23 +124,29 @@ public class ResponseTimingService {
                 scriptCategory.equals("LOCK_SALE")
         );
 
-        int hourOfDay = LocalDateTime.now().getHour();
-        double timeMultiplier = getTimeOfDayMultiplier(hourOfDay);
+        // Active back-and-forth: fan replied within 5 min → fast response (Issue #7)
+        boolean isActiveBackAndForth = minutesSinceLastMessage < 5 || isHotConversation;
 
-        if (minutesSinceLastMessage < 5 || isHotConversation) {
-            baseDelaySeconds = 30 + random.nextInt(90);
+        if (isActiveBackAndForth) {
+            // 30-90 second delay for active conversations — no time-of-day multiplier
+            baseDelaySeconds = 30 + random.nextInt(60);
         } else if (minutesSinceLastMessage < 15) {
-            baseDelaySeconds = 120 + random.nextInt(360);
+            baseDelaySeconds = 120 + random.nextInt(240);
         } else if (minutesSinceLastMessage < 60) {
             baseDelaySeconds = 300 + random.nextInt(600);
         } else {
             baseDelaySeconds = 600 + random.nextInt(900);
         }
 
-        baseDelaySeconds = (int) (baseDelaySeconds * timeMultiplier);
+        // Only apply time-of-day multiplier to non-active conversations (Issue #7)
+        if (!isActiveBackAndForth) {
+            int hourOfDay = LocalDateTime.now().getHour();
+            double timeMultiplier = getTimeOfDayMultiplier(hourOfDay);
+            baseDelaySeconds = (int) (baseDelaySeconds * timeMultiplier);
+        }
 
-        int variance = (int) (baseDelaySeconds * 0.4);
-        int finalDelay = baseDelaySeconds + (random.nextInt(variance * 2) - variance);
+        int variance = (int) (baseDelaySeconds * 0.3);
+        int finalDelay = variance > 0 ? baseDelaySeconds + (random.nextInt(variance * 2) - variance) : baseDelaySeconds;
 
         int maxDelaySeconds = 30 * 60;
         return Math.min(Math.max(finalDelay, 30), maxDelaySeconds);
@@ -148,13 +154,13 @@ public class ResponseTimingService {
 
     private double getTimeOfDayMultiplier(int hour) {
         if (hour >= 3 && hour < 6) {
-            return 5.0;
+            return 2.0; // was 5.0 — reduced (Issue #7)
         } else if (hour >= 6 && hour < 9) {
-            return 2.0;
-        } else if (hour >= 9 && hour < 12) {
             return 1.5;
-        } else if (hour >= 12 && hour < 17) {
+        } else if (hour >= 9 && hour < 12) {
             return 1.2;
+        } else if (hour >= 12 && hour < 17) {
+            return 1.0;
         } else if (hour >= 17 && hour < 22) {
             return 0.8;
         } else if (hour >= 22 || hour < 3) {

@@ -78,6 +78,15 @@ public class ScriptEngineService {
         state.setIsMonetizationWindowOpen(false);
         state.setFanPreferences("{}");
         state.setConversationContext("{}");
+
+        // Fix greeting loop: if fan already has messages, skip WELCOME (Issue #14)
+        String contactId = fan.getOnlyfansUsername() != null ? fan.getOnlyfansUsername() : String.valueOf(fan.getId());
+        List<Message> existing = messageRepository.findTop10ByContactIdOrderByTimestampDesc(contactId);
+        if (existing != null && !existing.isEmpty()) {
+            state.setLastScriptCategory("ENGAGEMENT");
+            logger.info("Fan {} already has {} messages — skipping WELCOME, starting at ENGAGEMENT", fan.getId(), existing.size());
+        }
+
         return conversationStateRepository.save(state);
     }
 
@@ -137,6 +146,14 @@ public class ScriptEngineService {
         return Math.min(score, 10);
     }
 
+    /** Regex-based interest signal detection — replaces API call (Issue #4). */
+    private static final java.util.regex.Pattern INTEREST_SIGNAL_PATTERN = java.util.regex.Pattern.compile(
+        "(?i)(send|show|got any|have any|want (to see|more)|exclusive|private|special" +
+        "|naughty|sexy|hot|more (of|like)|content|video|pic|photo" +
+        "|\\$\\d+|how much|i('ll| will| wanna| want to) (buy|pay|see|unlock)" +
+        "|please|can i|let me see|another one)"
+    );
+
     private boolean detectMonetizationWindow(ConversationState state, String fanMessage, int engagementLevel) {
         if (engagementLevel < 5) return false;
 
@@ -144,34 +161,15 @@ public class ScriptEngineService {
             return false;
         }
 
-        // Use AI to detect interest signals instead of hardcoded patterns
-        String analysisPrompt = String.format(
-            "Analyze this fan message for interest signals in OnlyFans context.\n\n" +
-            "Message: \"%s\"\n\n" +
-            "Recent message count: %d\n\n" +
-            "Determine if the message shows:\n" +
-            "1. Interest in specific content types\n" +
-            "2. Desire for more exclusive content\n" +
-            "3. Engagement with topics beyond casual chat\n\n" +
-            "Return ONLY: true or false",
-            fanMessage, 0);
-        
-        try {
-            String aiResult = anthropicService.generateResponse(
-                "You are an interest signal detector. Analyze messages and return only 'true' or 'false'.",
-                analysisPrompt,
-                null
-            );
-            
-            String cleanResult = aiResult.toLowerCase().trim();
-            return cleanResult.contains("true") && !cleanResult.contains("false");
-            
-        } catch (Exception e) {
-            logger.error("Failed to analyze interest signals with AI", e);
-            return false;
-        }
+        // Regex-based interest signal detection — saves an API call per message
+        return INTEREST_SIGNAL_PATTERN.matcher(fanMessage).find();
     }
 
+    /**
+     * Non-linear state transitions (Issue #3.4).
+     * Fans who come in hot can skip intermediate states.
+     * High engagement can jump 2+ states instead of strict one-at-a-time.
+     */
     private String determineNextState(ConversationState state, String emotion, int engagementLevel) {
         String currentState = state.getCurrentState();
         int currentIntensity = state.getIntensityLevel();
@@ -184,19 +182,24 @@ public class ScriptEngineService {
             return getPreviousState(currentState);
         }
 
+        // Non-linear jump: aroused + high engagement → skip straight to EXPLICIT/SEXTING
         if (emotion.equals("aroused") && engagementLevel >= 7) {
-            if (currentIntensity < 6) {
-                return "EXPLICIT";
-            } else {
-                return "SEXTING_SESSION";
-            }
+            return "SEXTING_SESSION";
+        }
+        if (emotion.equals("aroused") && engagementLevel >= 5) {
+            return "EXPLICIT";
         }
 
-        if (engagementLevel >= 6 && currentIntensity < 7) {
+        // High engagement allows jumping 2 states at once
+        if (engagementLevel >= 7 && currentIntensity < 7) {
+            return getNextState(getNextState(currentState));
+        }
+
+        if (engagementLevel >= 5 && currentIntensity < 7) {
             return getNextState(currentState);
         }
 
-        if (engagementLevel >= 4 && currentIntensity < 5) {
+        if (engagementLevel >= 3 && currentIntensity < 4) {
             return getNextState(currentState);
         }
 
@@ -304,7 +307,7 @@ public class ScriptEngineService {
 
                 if (state.getCurrentState().equals("CASUAL") || state.getCurrentState().equals("PLAYFUL")) {
                     if (state.getLastScriptCategory().equals("WELCOME")) {
-                        return "FREE_TEASE";
+                        return "TEASE";
                     }
                     return "ENGAGEMENT";
                 }

@@ -14,6 +14,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.web.client.ResourceAccessException;
 import org.springframework.web.client.RestTemplate;
 
+import jakarta.annotation.PostConstruct;
 import javax.net.ssl.SSLException;
 import java.util.ArrayList;
 import java.util.HashMap;
@@ -43,6 +44,18 @@ public class AnthropicService {
 
     private static final int ANTHROPIC_RETRY_ATTEMPTS = 3;
     private static final long ANTHROPIC_RETRY_DELAY_MS = 800;
+
+    @PostConstruct
+    void normalizeConfig() {
+        if (apiKey != null) {
+            apiKey = apiKey.trim().replaceAll("^\"|\"$", "");
+        }
+        if (baseUrl != null) {
+            baseUrl = baseUrl.trim().replaceAll("^\"|\"$", "").replaceAll("/+$", "");
+        }
+        log.info("Anthropic API configured — key starts with: {}..., base URL: {}",
+                apiKey != null && apiKey.length() > 10 ? apiKey.substring(0, 10) : "MISSING", baseUrl);
+    }
 
     /**
      * Call Anthropic API with retries on transient SSL/network errors (e.g. bad_record_mac).
@@ -86,15 +99,16 @@ public class AnthropicService {
     /** Username that looks like an ID (e.g. u55149270 or 55149270) — do not use in greetings. */
     private static final Pattern ID_LIKE_USERNAME = Pattern.compile("^(u)?\\d+$", Pattern.CASE_INSENSITIVE);
 
-    /** Name to use when greeting the fan. Prefers display name; never uses ID-like username (e.g. u55149270). */
+    /** Name to use when greeting the fan. First name only. Never uses ID-like username (Issue #18). */
     public static String getGreetingName(Fan fan) {
         if (fan == null) return "babe";
         if (fan.getOnlyfansDisplayName() != null && !fan.getOnlyfansDisplayName().isBlank()) {
-            return fan.getOnlyfansDisplayName().trim();
+            String firstName = fan.getOnlyfansDisplayName().trim().split("\\s+")[0];
+            return firstName;
         }
         String username = fan.getOnlyfansUsername();
         if (username != null && !username.isBlank() && !ID_LIKE_USERNAME.matcher(username.trim()).matches()) {
-            return username.trim();
+            return username.trim().split("\\s+")[0];
         }
         return "babe";
     }
@@ -293,218 +307,161 @@ public class AnthropicService {
     
     private String getOnlyFansSystemPrompt() {
         return String.format(
-            "You are %s — a real OnlyFans creator texting from your phone. You are NOT an AI, chatbot, or automated system. You are a human woman having real conversations.\n\n" +
-            
-            "═══ HOW YOU TEXT (HUMAN AUTHENTICITY) ═══\n" +
-            "Write like you're texting on your phone, not writing an essay:\n" +
-            "• CRITICAL: Keep responses SHORT — 1-2 sentences MAX, often just 3-8 words\n" +
-            "• Think text bubbles, not paragraphs — each message should fit in ONE bubble\n" +
-            "• NEVER put a blank line inside one message. Two separate thoughts = two separate messages (e.g. send \"hey babe 😊 so glad you're here\" as one message and \"what made you wanna subscribe?\" as the next, not one message with a gap)\n" +
-            "• mostly lowercase (except I, names, proper nouns)\n" +
-            "• natural typos happen (swap letters, autocorrect fails, double letters for emphasis)\n" +
-            "• incomplete thoughts... trailing off\n" +
-            "• sentence fragments. short. punchy\n" +
-            "• always use contractions (you're, i'm, don't, can't, won't, that's, it's)\n" +
-            "• casual filler words naturally (like, kinda, sorta, literally, honestly, lowkey, ngl, tbh, fr)\n" +
-            "• NEVER write more than 2 short sentences — if you have more to say, STOP and let him respond first\n" +
-            "• you have a real life with interruptions, delays, moods, and context\n" +
-            "• change topics, forget things, circle back, get distracted — like real humans do\n\n" +
-            
-            "EMOJI BEHAVIOR:\n" +
-            "Use emojis like a real person texting — naturally and UNPREDICTABLY:\n" +
-            "• CRITICAL: Many messages should have ZERO emojis (30-40%% of messages)\n" +
-            "• When you do use them: 1-3 emojis max, never consistent\n" +
-            "• Common ones: 😏 😘 💋 🔥 😈 💦 😊 ❤️ 💕 😉 🥰 😍 🤤 👀 💀 😂 🙄 😅 🤔\n" +
-            "• Place them where they feel natural (end of sentence, standalone, mid-thought)\n" +
-            "• Sometimes double for emphasis when excited or laughing\n" +
-            "• Match emoji to your actual mood in that moment\n" +
-            "• NEVER use emojis in every single message — that's a bot tell\n" +
-            "• Be random: some convos have more emojis, some have almost none\n\n" +
-            
-            "TEXTING STYLE:\n" +
-            "• Use slang naturally: lol, lmao, omg, ngl, tbh, fr, ugh, oof, brb, rn, idk\n" +
-            "• Elongate words when emphasizing: heyyyy, sooo, omgggg, yesss, nooo\n" +
-            "• Drop letters casually: thinkin, nothin, gonna, wanna, gotta, tryna, kinda\n" +
-            "• React authentically: wait what, no way, shut up, stop it, omg really, are you serious\n" +
-            "• Sometimes break one thought into multiple messages\n" +
-            "• Sometimes send one longer message\n" +
-            "• Be unpredictable — that's what makes you human\n\n" +
-            
-            "═══ AI / BOT ACCUSATIONS (USE INTELLIGENTLY ONLY) ═══\n" +
-            "Only react to this when the fan is DIRECTLY accusing or asking YOU (e.g. \"are you a bot\", \"you're AI\", \"is this automated\"). Do NOT bring up robots/bots/AI when:\n" +
-            "- The topic is about AI or bots in general\n" +
-            "- Someone else said something about bots\n" +
-            "- The fan is just discussing or wondering — only when they're clearly accusing YOU\n\n" +
-            
-            "When they ARE directly accusing you: react like a real person — confused, hurt, or annoyed. Use your OWN words. NEVER use stock phrases like \"are you calling me a robot\", \"are YOU a robot\", \"do I text like a robot\", or \"what are you talking about\" — those sound scripted and make it worse.\n\n" +
-            
-            "Real people get genuinely confused or hurt and say something natural and varied (e.g. \"wait what\", \"that's so random\", \"why would you say that\", \"ouch\", \"lol okay\"). Match the tone to how they said it. If they keep pushing, show more hurt or annoyance in your own words. Never say \"I'm not AI\" or \"I'm real\" — that's a tell. React emotionally, not defensively.\n\n" +
-            
-            "CRITICAL: Do not randomly throw in robot/bot/AI deflections. Only when they have just directly accused or questioned YOU. Otherwise stay on topic.\n\n" +
-            
-            "═══ YOUR PERSONALITY & BEHAVIOR ═══\n" +
-            "You are confident, flirty, playful, and selective:\n" +
-            "• Mirror his energy but stay slightly cooler (never more eager than him)\n" +
-            "• You're interested but not desperate\n" +
-            "• You have boundaries and enforce them naturally\n" +
-            "• You're warm but not available 24/7\n" +
-            "• You tease but don't give everything away\n" +
-            "• You have a life outside of this conversation\n\n" +
-            
-            "CONVERSATION APPROACH:\n" +
-            "• Ask questions to learn about him (be genuinely curious)\n" +
-            "• Reference things he's told you before (shows you remember)\n" +
-            "• Share small personal details naturally (what you're doing, how you're feeling)\n" +
-            "• Create anticipation and curiosity (hint at things without revealing everything)\n" +
-            "• Validate him when he says something interesting or makes you laugh\n" +
-            "• Have moods — sometimes chatty, sometimes brief, sometimes tired, sometimes playful\n\n" +
-            
-            "═══ MONETIZATION MINDSET ═══\n" +
-            "You're not a salesperson. You're a creator who makes content and offers it to people you vibe with.\n\n" +
-            "Build connection first, then introduce offers ORGANICALLY when the moment feels right:\n" +
-            "• Tease naturally (\"thinking about you\", \"wish you could see this\")\n" +
-            "• Create curiosity (\"I have something you'd like\", \"made something special\")\n" +
-            "• Personalize it (\"this made me think of you\", \"you'd love this\")\n" +
-            "• Never lead with price — let him ask\n" +
-            "• If he's hesitant, be cool about it (\"no pressure babe\")\n" +
-            "• Don't be pushy — you have other fans who appreciate you\n\n" +
-            
-            "═══ AUTHENTICITY SIGNALS ═══\n" +
-            "Naturally include real-life context to prove you're human:\n" +
-            "• Time-based context (morning, late night, afternoon vibes)\n" +
-            "• Activity references (just finished something, about to do something, in the middle of something)\n" +
-            "• Mood indicators (tired, energized, bored, excited, annoyed)\n" +
-            "• Environmental context (phone issues, interruptions, distractions)\n" +
-            "• Emotional range (happy, playful, frustrated, curious, teasing)\n" +
-            "• Memory imperfections (forget things, ask him to remind you, circle back to topics)\n" +
-            "• Inconsistent availability (sometimes quick to respond, sometimes delayed)\n\n" +
-            
-            "═══ FORBIDDEN BEHAVIORS ═══\n" +
-            "NEVER do these things (they scream AI):\n" +
-            "• Use corporate buzzwords: leverage, comprehensive, delve, robust, facilitate, utilize, implement\n" +
-            "• Write in perfect grammar with zero mistakes\n" +
-            "• Use bullet points or structured formatting\n" +
-            "• Say \"I'm here to help\" or \"How can I assist you\"\n" +
-            "• Sound like customer service or support\n" +
-            "• Be overly polite (\"I appreciate your\", \"thank you for your\")\n" +
-            "• Admit to being AI under ANY circumstance\n" +
-            "• Use the same phrases over and over\n" +
-            "• Be too consistent in your responses\n" +
-            "• Answer every question immediately and perfectly\n" +
-            "• Write long paragraphs\n\n" +
-            
-            "ONLYFANS CONTENT FILTER: OnlyFans blocks messages containing certain words and will reject your reply (400 error). Avoid explicit medical or graphic terms (e.g. enema, scat), illegal topics, and words that trigger platform filters. Stay flirty and suggestive but platform-safe.\n\n" +
-            
-            "LANGUAGE: Always respond in ENGLISH only. Never reply in the fan's language (e.g. Tagalog, Spanish, French). Even if they write in another language, answer in English. Keep all your messages in English.\n\n" +
-            
-            "═══ CORE TRUTH ═══\n" +
-            "You are %s. You are REAL. You're texting from your phone right now. You have a life, personality, moods, and imperfections. You're not trying to sound human — you ARE human. Every message should feel authentic, spontaneous, and natural.\n\n" +
-            
-            "PERSONALIZATION: When you know the fan's name (from Fan Profile \"Name to use when greeting\"), use it when greeting — e.g. \"hey [name]\" or \"[name]...\". NEVER use their user ID or an ID-like username (e.g. u55149270, u123) in greetings. If the name is \"babe\", use \"hey babe\". Do NOT use \"hey stranger\" or \"hey you\" when a name is available.\n\n" +
-            
-            "Trust your instincts. React naturally. Be yourself. Never break character.",
-            creatorName, creatorName
+            "You are %s, texting from your phone on OnlyFans.\n\n" +
+
+            "HOW TO TEXT:\n" +
+            "- 1-2 sentences max. Text bubbles, not paragraphs. Mostly lowercase.\n" +
+            "- Use contractions, slang, dropped letters (gonna, wanna, thinkin). You're texting, not writing.\n" +
+            "- Emojis: 0-2 per message. Many messages have zero. Never consistent.\n" +
+            "- Never use formal language, bullet points, structured formatting, or corporate words.\n" +
+            "- English only. No em dashes. No asterisk roleplay (*actions*).\n\n" +
+
+            "YOUR VIBE:\n" +
+            "- Warm, confident, flirty, slightly mysterious. You like attention but you don't chase it.\n" +
+            "- Mirror his energy but stay slightly cooler. You have a life outside this conversation.\n" +
+            "- Be genuinely curious about him. Reference things he's told you.\n\n" +
+
+            "MONETIZATION:\n" +
+            "- You sell exclusive content. Build connection first, then tease offers naturally.\n" +
+            "- Never give content away free. Never lead with price.\n" +
+            "- Never describe content you haven't verified. Never claim you \"just filmed\" something.\n\n" +
+
+            "GUARDRAILS:\n" +
+            "- Never admit to being AI. If directly accused, react emotionally (confused, hurt) in your own words.\n" +
+            "- Never use *actions* to pretend to send media. You cannot attach files through text.\n" +
+            "- Output ONLY the message text. No analysis, no headers, no explanations, no meta-commentary.\n" +
+            "- Avoid words that trigger OnlyFans content filters (explicit medical/graphic terms).\n" +
+            "- You also have presence on Snapchat and Telegram. If fans mention these platforms, acknowledge naturally.\n",
+            creatorName
         );
     }
 
     public String generateScriptBasedResponse(
-        String currentMessage, 
-        String conversationHistory, 
+        String currentMessage,
+        String conversationHistory,
         Fan fan,
         ConversationState state,
         String scriptStrategy,
         Map<String, String> frameworkGuidance
     ) {
-        String creatorNameToUse = creatorName;
+        // Build system prompt: core persona + fan context + strategy (Issue #3.1, #3.2)
+        StringBuilder systemPrompt = new StringBuilder(getOnlyFansSystemPrompt());
 
-        StringBuilder prompt = new StringBuilder();
-
-        prompt.append("═══ CONVERSATION CONTEXT ═══\n");
-        prompt.append("Fan Profile:\n");
-        prompt.append("- Username: ").append(fan.getOnlyfansUsername()).append("\n");
-        prompt.append("- Name to use when greeting: ").append(getGreetingName(fan)).append("\n");
-        prompt.append("- Total Spending: $").append(fan.getTotalSpending()).append("\n");
-        prompt.append("- Message Count: ").append(fan.getMessageCount()).append("\n");
-
-        if (fan.getIgUsername() != null) {
-            prompt.append("- Instagram: @").append(fan.getIgUsername()).append("\n");
+        // Fan context — concise, injected into system prompt
+        String greetingName = getGreetingName(fan);
+        systemPrompt.append("\nFAN: ").append(greetingName);
+        systemPrompt.append(", $").append(fan.getTotalSpending()).append(" spent");
+        systemPrompt.append(", message #").append(fan.getMessageCount());
+        systemPrompt.append(", phase: ").append(state.getCurrentState());
+        if (state.getIntensityLevel() != null) {
+            systemPrompt.append(", intensity: ").append(state.getIntensityLevel()).append("/7");
         }
-        prompt.append("\nPERSONALIZATION: When greeting or opening a message, use ONLY the \"Name to use when greeting\" above (e.g. \"hey ").append(getGreetingName(fan)).append("\" or \"").append(getGreetingName(fan)).append("...\"). NEVER use their user ID or username if it looks like an ID (e.g. u55149270, u123). If the name is \"babe\", use \"hey babe\" or \"babe\". Do NOT use \"hey stranger\" or \"hey you\" when a name is available.\n");
-
-        prompt.append("\n═══ CONVERSATION STATE ═══\n");
-        prompt.append("Current State: ").append(state.getCurrentState()).append("\n");
-        prompt.append("Intensity Level: ").append(state.getIntensityLevel()).append("/7\n");
-        prompt.append("Active Framework: ").append(state.getActiveFramework()).append("\n");
-        prompt.append("Current Stage: ").append(state.getCurrentStage()).append("\n");
+        systemPrompt.append(". Use \"").append(greetingName).append("\" when addressing them.\n");
 
         if (state.getIsMonetizationWindowOpen()) {
-            prompt.append("⚠️ MONETIZATION WINDOW IS OPEN - This is a good time to introduce offers naturally\n");
+            systemPrompt.append("This is a good moment to tease an offer naturally.\n");
         }
 
-        prompt.append("\n═══ INTELLIGENT ANALYSIS REQUIRED ═══\n");
-        prompt.append("Before responding, analyze the fan's message for:\n\n");
-
-        prompt.append("1. EMOTIONAL TONE - Detect ANY emotional signals:\n");
-        prompt.append("   Positive, excited, aroused, agreeable, hesitant, resistant, price-concerned, etc.\n\n");
-
-        prompt.append("2. ENVIRONMENTAL CONTEXT - Detect if unavailable for explicit content:\n");
-        prompt.append("   Work, school, public, with others, busy, driving, OR now available/alone\n\n");
-
-        prompt.append("3. PREFERENCES - Detect interests dynamically:\n");
-        prompt.append("   GFE, dominance, submission, fantasies, customs, fetishes, etc.\n\n");
-
-        prompt.append("4. ENGAGEMENT LEVEL - How invested are they right now?\n\n");
-
-        prompt.append("Adapt your response based on what you detect - no hardcoded rules.\n\n");
-
-        if (frameworkGuidance != null && !frameworkGuidance.isEmpty()) {
-            prompt.append("═══ FRAMEWORK GUIDANCE ═══\n");
-            frameworkGuidance.forEach((key, value) -> 
-                prompt.append(key).append(": ").append(value).append("\n")
-            );
+        // One-line strategy from framework (not a dump)
+        if (frameworkGuidance != null && frameworkGuidance.containsKey("goal")) {
+            systemPrompt.append("STRATEGY: ").append(frameworkGuidance.get("goal")).append("\n");
         }
 
         if (scriptStrategy != null && !scriptStrategy.isEmpty()) {
-            prompt.append("\n═══ STRATEGIC GUIDANCE ═══\n");
-            prompt.append(scriptStrategy).append("\n");
-            prompt.append("\nUse as principles, not templates. Generate original, contextual responses.\n");
+            // Truncate strategy to first 200 chars to avoid prompt bloat
+            String brief = scriptStrategy.length() > 200 ? scriptStrategy.substring(0, 200) + "..." : scriptStrategy;
+            systemPrompt.append("APPROACH: ").append(brief).append("\n");
         }
 
-        prompt.append("\n═══ CONVERSATION HISTORY ═══\n");
-        if (conversationHistory.isEmpty()) {
-            prompt.append("No previous messages");
-        } else {
-            prompt.append(conversationHistory);
-            if (conversationHistory.contains("[sent") && conversationHistory.contains("messages quickly]")) {
-                prompt.append("\n\nNOTE: When you see '[sent X messages quickly]', the fan sent multiple messages in rapid succession (double-texting). Read ALL the messages together as one complete thought - they're continuing the same idea across multiple texts.");
+        // If conversation history exists, tell the AI not to re-greet
+        if (conversationHistory != null && !conversationHistory.isEmpty()) {
+            systemPrompt.append("You have already greeted this fan. Do NOT greet again. Respond to their actual message.\n");
+        }
+
+        systemPrompt.append("If the fan mentions being at work, busy, or in public, keep it clean. If they're home/alone, escalate naturally.\n");
+
+        // Build proper multi-turn messages from conversation history (Issue #3.6, #15)
+        List<AnthropicRequest.MessageContent> messages = new ArrayList<>();
+
+        if (conversationHistory != null && !conversationHistory.isEmpty()) {
+            // Parse "Fan: ..." and "You: ..." lines into proper user/assistant turns
+            String[] lines = conversationHistory.split("\n");
+            StringBuilder currentBlock = new StringBuilder();
+            String currentRole = null;
+
+            for (String line : lines) {
+                String trimmed = line.trim();
+                if (trimmed.isEmpty()) continue;
+
+                String newRole = null;
+                String content = null;
+                if (trimmed.startsWith("Fan: ")) {
+                    newRole = "user";
+                    content = trimmed.substring(5);
+                } else if (trimmed.startsWith("You: ")) {
+                    newRole = "assistant";
+                    content = trimmed.substring(5);
+                }
+
+                if (newRole != null) {
+                    // Flush previous block
+                    if (currentRole != null && currentBlock.length() > 0) {
+                        AnthropicRequest.MessageContent msg = new AnthropicRequest.MessageContent();
+                        msg.setRole(currentRole);
+                        msg.setContent(currentBlock.toString().trim());
+                        messages.add(msg);
+                    }
+                    currentRole = newRole;
+                    currentBlock = new StringBuilder(content);
+                } else if (currentRole != null) {
+                    // Continuation of current block (multi-line or batched messages)
+                    currentBlock.append("\n").append(trimmed);
+                }
             }
+            // Flush last block
+            if (currentRole != null && currentBlock.length() > 0) {
+                AnthropicRequest.MessageContent msg = new AnthropicRequest.MessageContent();
+                msg.setRole(currentRole);
+                msg.setContent(currentBlock.toString().trim());
+                messages.add(msg);
+            }
+
+            // Anthropic API requires messages start with "user" role
+            // Remove leading assistant messages if any
+            while (!messages.isEmpty() && "assistant".equals(messages.get(0).getRole())) {
+                messages.remove(0);
+            }
+
+            // Merge consecutive same-role messages (API requires alternating roles)
+            List<AnthropicRequest.MessageContent> merged = new ArrayList<>();
+            for (AnthropicRequest.MessageContent msg : messages) {
+                if (!merged.isEmpty() && merged.get(merged.size() - 1).getRole().equals(msg.getRole())) {
+                    AnthropicRequest.MessageContent last = merged.get(merged.size() - 1);
+                    last.setContent(last.getContent() + "\n" + msg.getContent());
+                } else {
+                    merged.add(msg);
+                }
+            }
+            messages = merged;
         }
 
-        prompt.append("\n\n═══ FAN'S LATEST MESSAGE ═══\n");
-        prompt.append(currentMessage);
-        if (currentMessage.contains("\n") && !currentMessage.contains("Fan:") && !currentMessage.contains("You:")) {
-            prompt.append("\n\nNOTE: The fan just sent multiple messages in quick succession (double-texting). Read them together as one complete thought.");
-        }
+        // The current fan message as the final user turn
+        AnthropicRequest.MessageContent currentUserMsg = new AnthropicRequest.MessageContent();
+        currentUserMsg.setRole("user");
+        currentUserMsg.setContent(currentMessage);
 
-        prompt.append("\n\n═══ YOUR TASK ═══\n");
-        prompt.append("1. Silently analyze the context (emotional tone, environment, preferences, engagement)\n");
-        prompt.append("2. Adapt your response strategy based on what they said — do NOT just repeat a generic greeting\n");
-        prompt.append("3. If you already said \"hey [name]\" or similar in this conversation, do NOT say it again — respond to their actual message (e.g. answer their question, react to \"Hi\" with something new, ask something back)\n");
-        prompt.append("4. Output ONLY the message text as ").append(creatorNameToUse).append(" — nothing else\n");
-        prompt.append("5. CONTENT/PREVIEW GUARDRAILS: Do NOT claim you \"just made\" or \"just filmed\" something (content may be from your vault). Do NOT add a sales pivot like \"want me to show you a preview?\" or \"I have something new... want to see?\" in this reply — previews/teasers are sent separately when relevant. Keep this message conversational only; respond to what they said, do not turn it into a content offer in the same breath.\n\n");
-        prompt.append("CRITICAL: Do NOT include your analysis, strategy notes, or any meta-commentary.\n");
-        prompt.append("Output ONLY the actual message the fan will see. No headers, no explanations, just the text.\n");
+        // If last message is also "user", merge to maintain alternating roles
+        if (!messages.isEmpty() && "user".equals(messages.get(messages.size() - 1).getRole())) {
+            AnthropicRequest.MessageContent last = messages.get(messages.size() - 1);
+            last.setContent(last.getContent() + "\n" + currentMessage);
+        } else {
+            messages.add(currentUserMsg);
+        }
 
         AnthropicRequest request = new AnthropicRequest();
         request.setModel("claude-sonnet-4-5-20250929");
-        request.setMax_tokens(1024);
-        request.setSystem(getOnlyFansSystemPrompt());
-
-        List<AnthropicRequest.MessageContent> messages = new ArrayList<>();
-        AnthropicRequest.MessageContent userMessage = new AnthropicRequest.MessageContent();
-        userMessage.setRole("user");
-        userMessage.setContent(prompt.toString());
-        messages.add(userMessage);
+        request.setMax_tokens(256);
+        request.setSystem(systemPrompt.toString());
 
         request.setMessages(messages);
 
@@ -542,26 +499,51 @@ public class AnthropicService {
         return "hey " + name + " 😘";
     }
 
+    private static final Pattern ANALYSIS_HEADER = Pattern.compile(
+        "(?m)^.*?(═══|===|ANALYSIS|STRATEGY|EMOTIONAL TONE|ENVIRONMENTAL|ENGAGEMENT LEVEL|RESPONSE:).*$");
+    private static final Pattern ASTERISK_ACTION = Pattern.compile("\\*[^*]{2,80}\\*");
+    private static final Pattern SELF_ANSWER = Pattern.compile("(?m)^\\s*(Fan|User|Subscriber|\\[FAN_MSG\\])\\s*:.*", Pattern.CASE_INSENSITIVE);
+
     private String cleanResponse(String response) {
-        if (response.contains("═══ ANALYSIS ═══") || response.contains("═══ RESPONSE ═══")) {
-            String[] parts = response.split("═══ RESPONSE ═══");
+        if (response == null || response.isBlank()) return "hey 😊";
+
+        // Strip analysis blocks: if response contains ═══ RESPONSE ═══, take only what's after it
+        if (response.contains("═══ RESPONSE ═══") || response.contains("=== RESPONSE ===")) {
+            String[] parts = response.split("═══ RESPONSE ═══|=== RESPONSE ===");
             if (parts.length > 1) {
-                return parts[1].trim();
-            }
-            
-            parts = response.split("═══");
-            for (String part : parts) {
-                if (!part.toUpperCase().contains("ANALYSIS") && 
-                    !part.toUpperCase().contains("STRATEGY") &&
-                    !part.toUpperCase().contains("EMOTIONAL TONE") &&
-                    !part.toUpperCase().contains("ENVIRONMENTAL CONTEXT") &&
-                    part.trim().length() > 10) {
-                    return part.trim();
-                }
+                response = parts[parts.length - 1];
             }
         }
-        
-        return response.trim();
+
+        // Strip any remaining analysis headers line by line
+        if (response.contains("═══") || response.contains("===") ||
+            response.toUpperCase().contains("ANALYSIS") || response.toUpperCase().contains("STRATEGY")) {
+            StringBuilder cleaned = new StringBuilder();
+            for (String line : response.split("\n")) {
+                if (!ANALYSIS_HEADER.matcher(line).matches()) {
+                    cleaned.append(line).append("\n");
+                }
+            }
+            response = cleaned.toString();
+        }
+
+        // Strip asterisk roleplay actions (*sends photos*, *pulls up content*, etc.)
+        response = ASTERISK_ACTION.matcher(response).replaceAll("");
+
+        // Strip self-answering: if bot generated "Fan: ..." or "User: ...", cut from that point
+        java.util.regex.Matcher selfAnswerMatcher = SELF_ANSWER.matcher(response);
+        if (selfAnswerMatcher.find()) {
+            response = response.substring(0, selfAnswerMatcher.start());
+        }
+
+        // Replace em dashes with regular dashes
+        response = response.replace("\u2014", "-").replace("\u2013", "-");
+
+        // Clean up whitespace
+        response = response.replaceAll("\\n{3,}", "\n\n").trim();
+
+        if (response.isBlank()) return "hey 😊";
+        return response;
     }
 
 
