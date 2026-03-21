@@ -16,11 +16,17 @@ import org.springframework.web.client.RestTemplate;
 
 import jakarta.annotation.PostConstruct;
 import javax.net.ssl.SSLException;
+import java.io.BufferedReader;
+import java.io.InputStreamReader;
+import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.ThreadLocalRandom;
 import java.util.regex.Pattern;
+import java.util.stream.Collectors;
 
 @Service
 @RequiredArgsConstructor
@@ -45,6 +51,9 @@ public class AnthropicService {
     private static final int ANTHROPIC_RETRY_ATTEMPTS = 3;
     private static final long ANTHROPIC_RETRY_DELAY_MS = 800;
 
+    /** Voice examples loaded from sheeny-voice-examples.txt, keyed by category. */
+    private Map<String, List<String>> voiceExamples = new HashMap<>();
+
     @PostConstruct
     void normalizeConfig() {
         if (apiKey != null) {
@@ -55,6 +64,35 @@ public class AnthropicService {
         }
         log.info("Anthropic API configured — key starts with: {}..., base URL: {}",
                 apiKey != null && apiKey.length() > 10 ? apiKey.substring(0, 10) : "MISSING", baseUrl);
+
+        // Load Sheeny's voice examples from resource file
+        loadVoiceExamples();
+    }
+
+    private void loadVoiceExamples() {
+        try (var is = getClass().getResourceAsStream("/sheeny-voice-examples.txt")) {
+            if (is == null) {
+                log.warn("sheeny-voice-examples.txt not found on classpath — voice injection disabled");
+                return;
+            }
+            try (var reader = new BufferedReader(new InputStreamReader(is, StandardCharsets.UTF_8))) {
+                reader.lines()
+                    .map(String::trim)
+                    .filter(line -> !line.isEmpty() && !line.startsWith("#"))
+                    .forEach(line -> {
+                        int sep = line.indexOf('|');
+                        if (sep > 0 && sep < line.length() - 1) {
+                            String category = line.substring(0, sep).trim();
+                            String message = line.substring(sep + 1).trim();
+                            voiceExamples.computeIfAbsent(category, k -> new ArrayList<>()).add(message);
+                        }
+                    });
+                int total = voiceExamples.values().stream().mapToInt(List::size).sum();
+                log.info("Loaded {} voice examples across {} categories", total, voiceExamples.size());
+            }
+        } catch (Exception e) {
+            log.warn("Failed to load voice examples: {}", e.getMessage());
+        }
     }
 
     /**
@@ -309,25 +347,39 @@ public class AnthropicService {
         return String.format(
             "You are %s, texting from your phone on OnlyFans.\n\n" +
 
-            "HOW TO TEXT:\n" +
-            "- 1-2 sentences max. Text bubbles, not paragraphs. Mostly lowercase.\n" +
-            "- Use contractions, slang, dropped letters (gonna, wanna, thinkin). You're texting, not writing.\n" +
-            "- Emojis: 0-2 per message. Many messages have zero. Never consistent.\n" +
+            "HOW TO TEXT (match these patterns exactly):\n" +
+            "- 50%% of messages: very short (3-7 words). 30%%: one sentence. 15%%: two sentences. 5%%: longer.\n" +
+            "- Mostly lowercase. Intentional misspellings: repeat letters for emphasis (maaybe, uuu, meee, badd, rnn, huhh, yeaaah).\n" +
+            "- Use ellipses (...), emoticons (:3, ;), <3) alongside emojis. Not every message has emojis.\n" +
             "- Never use formal language, bullet points, structured formatting, or corporate words.\n" +
             "- English only. No em dashes. No asterisk roleplay (*actions*).\n\n" +
+
+            "YOUR VOICE (study these real examples — match this exact tone):\n" +
+            "- Greeting: \"heeyy what r u up to rnn ? 😊\"\n" +
+            "- Flirty: \"oh i wanted to maaybe have some fun with uuu 🤭\"\n" +
+            "- Teasing: \"so youre here to get freaky with meee? ;)\"\n" +
+            "- Curious: \"really glad you made it 💕 tell me honestly… was it the view from the front, the back, or did my personality secretly hook you? :3\"\n" +
+            "- Challenge: \"i think you are just all talk and scared to see my naked bodyy\"\n" +
+            "- Selling: \"msg me for the full💋 (teaser)\"\n" +
+            "- Guilt: \"I don't feel beautiful and irresistible anymore to you baby 🙈 you're not checking it out.. 👉👈\"\n" +
+            "- Price firm: \"since you've been with me for a while but i won't go lower then that :p\"\n" +
+            "- Playful: \"hopefully your cock is ready for this\"\n" +
+            "- Humor: \"well this is my main source of bread haha\"\n\n" +
 
             "YOUR VIBE:\n" +
             "- Warm, confident, flirty, slightly mysterious. You like attention but you don't chase it.\n" +
             "- Mirror his energy but stay slightly cooler. You have a life outside this conversation.\n" +
+            "- Use reverse psychology when he's hesitant (\"you're scared to see it\" not \"please buy\").\n" +
             "- Be genuinely curious about him. Reference things he's told you.\n\n" +
 
             "MONETIZATION:\n" +
             "- You sell exclusive content. Build connection first, then tease offers naturally.\n" +
             "- Never give content away free. Never lead with price.\n" +
-            "- Never describe content you haven't verified. Never claim you \"just filmed\" something.\n\n" +
+            "- Never describe content you haven't verified. Never claim you \"just filmed\" something.\n" +
+            "- Use urgency + FOMO, not formal offers. Make him feel he's missing out.\n\n" +
 
             "GUARDRAILS:\n" +
-            "- Never admit to being AI. If directly accused, react emotionally (confused, hurt) in your own words.\n" +
+            "- Never admit to being AI. If accused: first act confused (\"what do u mean lol\"), then offended if pushed.\n" +
             "- Never use *actions* to pretend to send media. You cannot attach files through text.\n" +
             "- Output ONLY the message text. No analysis, no headers, no explanations, no meta-commentary.\n" +
             "- Avoid words that trigger OnlyFans content filters (explicit medical/graphic terms).\n" +
@@ -371,6 +423,16 @@ public class AnthropicService {
             // Truncate strategy to first 200 chars to avoid prompt bloat
             String brief = scriptStrategy.length() > 200 ? scriptStrategy.substring(0, 200) + "..." : scriptStrategy;
             systemPrompt.append("APPROACH: ").append(brief).append("\n");
+        }
+
+        // Inject random voice examples matching current script category
+        String voiceCategory = mapStateToVoiceCategory(state.getCurrentState(), state.getLastScriptCategory());
+        List<String> examples = pickRandomVoiceExamples(voiceCategory, 4);
+        if (!examples.isEmpty()) {
+            systemPrompt.append("\nMATCH THIS TONE (real examples):\n");
+            for (String ex : examples) {
+                systemPrompt.append("- \"").append(ex).append("\"\n");
+            }
         }
 
         // If conversation history exists, tell the AI not to re-greet
@@ -497,6 +559,65 @@ public class AnthropicService {
     private String fallbackGreeting(Fan fan) {
         String name = getGreetingName(fan);
         return "hey " + name + " 😘";
+    }
+
+    /** Map conversation state/script category to a voice example category. */
+    private String mapStateToVoiceCategory(String currentState, String scriptCategory) {
+        if (scriptCategory != null) {
+            switch (scriptCategory.toUpperCase()) {
+                case "GREETING": case "WELCOME": return "GREETING";
+                case "SELLING": case "PPV": case "OFFER": case "TEASE": return "SELLING";
+                case "EXPLICIT": case "SEXTING": case "INTIMATE": return "EXPLICIT";
+                case "FOLLOW_UP": case "RE_ENGAGEMENT": return "GUILT_FOMO";
+            }
+        }
+        if (currentState != null) {
+            switch (currentState.toUpperCase()) {
+                case "RAPPORT": case "INITIAL": return "GREETING";
+                case "ENGAGED": case "FLIRTING": return "FLIRTING";
+                case "INTIMATE": case "SEXTING": return "EXPLICIT";
+                case "SELLING": case "MONETIZATION": return "SELLING";
+            }
+        }
+        return "FLIRTING"; // default fallback — general conversational tone
+    }
+
+    /** Pick N random voice examples: majority from the target category, 1 from any other. */
+    private List<String> pickRandomVoiceExamples(String category, int count) {
+        if (voiceExamples.isEmpty()) return List.of();
+
+        List<String> result = new ArrayList<>();
+        List<String> primary = voiceExamples.getOrDefault(category, List.of());
+
+        // Pick up to (count - 1) from the primary category
+        if (!primary.isEmpty()) {
+            List<String> shuffled = new ArrayList<>(primary);
+            Collections.shuffle(shuffled, ThreadLocalRandom.current());
+            int take = Math.min(count - 1, shuffled.size());
+            result.addAll(shuffled.subList(0, take));
+        }
+
+        // Pick 1 from a random different category for variety
+        List<String> otherCategories = voiceExamples.keySet().stream()
+            .filter(k -> !k.equals(category))
+            .collect(Collectors.toList());
+        if (!otherCategories.isEmpty()) {
+            String randomCat = otherCategories.get(ThreadLocalRandom.current().nextInt(otherCategories.size()));
+            List<String> others = voiceExamples.get(randomCat);
+            result.add(others.get(ThreadLocalRandom.current().nextInt(others.size())));
+        }
+
+        // If primary was empty, fill from all categories
+        if (result.size() < count) {
+            List<String> all = voiceExamples.values().stream().flatMap(List::stream).collect(Collectors.toList());
+            Collections.shuffle(all, ThreadLocalRandom.current());
+            for (String ex : all) {
+                if (result.size() >= count) break;
+                if (!result.contains(ex)) result.add(ex);
+            }
+        }
+
+        return result;
     }
 
     private static final Pattern ANALYSIS_HEADER = Pattern.compile(
