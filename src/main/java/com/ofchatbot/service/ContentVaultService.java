@@ -195,6 +195,21 @@ public class ContentVaultService {
         if (scriptVaults.isEmpty() && !apiFolderNames.isEmpty()) {
             out.put("hint", "API has folders but DB has no script vaults for creator " + cid + ". Name folders with script prefix (e.g. 'SO5 - Solo - ...') and restart.");
         }
+
+        // Show media level distribution for each script vault
+        for (ContentVault v : scriptVaults) {
+            List<VaultMedia> allMedia = vaultMediaRepository.findByContentVaultId(v.getId());
+            Map<String, Object> levelInfo = new LinkedHashMap<>();
+            levelInfo.put("total_media", allMedia.size());
+            levelInfo.put("with_level", allMedia.stream().filter(m -> m.getLevel() != null).count());
+            levelInfo.put("without_level", allMedia.stream().filter(m -> m.getLevel() == null).count());
+            Map<Integer, Long> levelCounts = allMedia.stream()
+                .filter(m -> m.getLevel() != null)
+                .collect(java.util.stream.Collectors.groupingBy(VaultMedia::getLevel, java.util.stream.Collectors.counting()));
+            levelInfo.put("level_distribution", levelCounts);
+            out.put("media_levels_" + v.getScriptId(), levelInfo);
+        }
+
         return out;
     }
 
