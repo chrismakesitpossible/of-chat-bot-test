@@ -182,6 +182,49 @@ public class OnlyFansApiService {
         }
     }
 
+    /**
+     * Fetch past chat messages from the OF API so the bot can see conversation history
+     * that happened before the webhook was set up.
+     */
+    public String fetchChatHistory(String chatId, String creatorId) {
+        String apiKey;
+        String accountId;
+
+        if (creatorId != null && !creatorId.isBlank()) {
+            Creator creator = creatorService.findByCreatorId(creatorId)
+                .orElseThrow(() -> new RuntimeException("Creator not found: " + creatorId));
+            apiKey = creator.getOnlyfansApiKey();
+            accountId = creator.getOnlyfansAccountId();
+            if (apiKey == null || apiKey.isBlank()) apiKey = defaultApiKey;
+            if (accountId == null || accountId.isBlank()) {
+                accountId = defaultAccountId != null ? defaultAccountId.trim() : "";
+            }
+        } else {
+            apiKey = defaultApiKey;
+            accountId = defaultAccountId != null ? defaultAccountId.trim() : "";
+        }
+        if (accountId == null || accountId.isBlank() || apiKey == null || apiKey.isBlank()) {
+            log.warn("Cannot fetch chat history — missing API credentials");
+            return null;
+        }
+
+        String url = String.format("%s/%s/chats/%s/messages?limit=20", baseUrl.replaceAll("/+$", ""), accountId.trim(), chatId);
+
+        HttpHeaders headers = new HttpHeaders();
+        headers.set("Authorization", "Bearer " + apiKey);
+        headers.setContentType(MediaType.APPLICATION_JSON);
+        HttpEntity<String> httpRequest = new HttpEntity<>(headers);
+
+        try {
+            ResponseEntity<String> response = restTemplate.exchange(url, HttpMethod.GET, httpRequest, String.class);
+            log.info("Fetched chat history for chat: {}", chatId);
+            return response.getBody();
+        } catch (Exception e) {
+            log.warn("Failed to fetch chat history for chat {} (non-critical): {}", chatId, e.getMessage());
+            return null;
+        }
+    }
+
     private boolean isSendToSelfError(Throwable e) {
         String message = e != null ? e.getMessage() : null;
         if (message != null && message.contains("Cannot send message to yourself")) {

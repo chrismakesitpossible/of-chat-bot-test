@@ -128,8 +128,21 @@ public class ResponseTimingService {
         boolean isActiveBackAndForth = minutesSinceLastMessage < 5 || isHotConversation;
 
         if (isActiveBackAndForth) {
-            // 30-90 second delay for active conversations — no time-of-day multiplier
-            baseDelaySeconds = 30 + random.nextInt(60);
+            // Variable human-like delay: mostly fast (5-30s) but sometimes takes 1-3 min
+            double roll = random.nextDouble();
+            if (roll < 0.30) {
+                // 30% chance: instant-ish reply (5-10s) — she was already looking at her phone
+                baseDelaySeconds = 5 + random.nextInt(6);
+            } else if (roll < 0.65) {
+                // 35% chance: quick reply (10-30s) — typing it out
+                baseDelaySeconds = 10 + random.nextInt(21);
+            } else if (roll < 0.85) {
+                // 20% chance: slight pause (30-90s) — got distracted for a sec
+                baseDelaySeconds = 30 + random.nextInt(61);
+            } else {
+                // 15% chance: takes a minute (90-180s) — doing something, came back
+                baseDelaySeconds = 90 + random.nextInt(91);
+            }
         } else if (minutesSinceLastMessage < 15) {
             baseDelaySeconds = 120 + random.nextInt(240);
         } else if (minutesSinceLastMessage < 60) {

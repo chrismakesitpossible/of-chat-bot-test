@@ -243,8 +243,24 @@ public class OnlyFansChatbotService {
                 externalMessageId
             );
 
+            // Backfill past conversation from OF API if this fan has no prior messages in DB
+            List<Message> existingMessages = messageService.getRecentMessages(onlyfansUserId, 10);
+            if (existingMessages.size() <= 1) {
+                try {
+                    String chatHistory = onlyFansApiService.fetchChatHistory(chatId, creator.getCreatorId());
+                    if (chatHistory != null) {
+                        int imported = messageService.importChatHistory(chatHistory, creator.getCreatorId(), onlyfansUserId, creator.getCreatorId());
+                        if (imported > 0) {
+                            log.info("Backfilled {} past messages for fan {}", imported, onlyfansUserId);
+                        }
+                    }
+                } catch (Exception histEx) {
+                    log.warn("Failed to backfill chat history for fan {} (non-critical): {}", onlyfansUserId, histEx.getMessage());
+                }
+            }
+
             List<Message> recentMessages = messageService.getRecentMessages(onlyfansUserId, 10);
-            
+
             // Get all recent fan messages sent within last 2 minutes for batched context
             String batchedMessageText = messageText;
             long recentFanMessageCount = recentMessages.stream()
@@ -275,11 +291,19 @@ public class OnlyFansChatbotService {
             // Detect purchase complaints / scam concerns so we can pause sales and focus on fixing issues.
             boolean purchaseComplaint = isPurchaseComplaintOrScamConcern(batchedMessageText);
             
-            String analysisJson = scriptEngineService.analyzeConversationState(state, batchedMessageText, recentMessages);
+            String analysisJson = null;
+            String scriptCategory = "CASUAL";
+            String suggestedNextState = state.getCurrentState();
+            int engagementLevel = 5;
 
-            scriptEngineService.detectAndStoreFanPreferences(state, batchedMessageText);
+            try {
+                analysisJson = scriptEngineService.analyzeConversationState(state, batchedMessageText, recentMessages);
+                scriptEngineService.detectAndStoreFanPreferences(state, batchedMessageText);
+                scriptCategory = scriptEngineService.selectScriptCategory(state, analysisJson, recentMessages);
+            } catch (Exception analysisEx) {
+                log.error("AI analysis failed — using defaults. Fan: {}", onlyfansUserId, analysisEx);
+            }
 
-            String scriptCategory = scriptEngineService.selectScriptCategory(state, analysisJson, recentMessages);
             String scriptTemplate = scriptEngineService.getScriptTemplate(scriptCategory, state);
             Map<String, String> frameworkGuidance = scriptEngineService.getFrameworkGuidance(state);
 
@@ -288,22 +312,28 @@ public class OnlyFansChatbotService {
             String conversationHistory = messageService.getConversationHistory(onlyfansUserId, 10);
             log.info("Conversation history for fan {}: {}", onlyfansUserId, conversationHistory);
             log.info("Batched message text being sent to AI: {}", batchedMessageText);
-            
+
             // If this message is a clear "send me content / another one" moment AND
             // we're going to handle it via PPV, skip the extra long ENGAGEMENT reply
             // so the vibe stays focused on the offer.
             if (!explicitPurchaseIntent) {
-                String response = anthropicService.generateScriptBasedResponse(
-                    batchedMessageText,
-                    conversationHistory,
-                    fan,
-                    state,
-                    scriptTemplate,
-                    frameworkGuidance
-                );
+                String response = null;
+                try {
+                    response = anthropicService.generateScriptBasedResponse(
+                        batchedMessageText,
+                        conversationHistory,
+                        fan,
+                        state,
+                        scriptTemplate,
+                        frameworkGuidance
+                    );
+                } catch (Exception genEx) {
+                    log.error("AI response generation failed — using fallback. Fan: {}", onlyfansUserId, genEx);
+                    response = generateFallbackResponse(batchedMessageText);
+                }
 
                 String replyToMessageId = shouldUseReplyTo(state, scriptCategory) ? externalMessageId : null;
-                
+
                 responseTimingService.scheduleNaturalResponse(chatId, response, state, fan, batchedMessageText, replyToMessageId, creator.getCreatorId());
 
                 messageService.saveMessage(
@@ -317,9 +347,23 @@ public class OnlyFansChatbotService {
                 );
             }
 
-            JsonNode analysis = new ObjectMapper().readTree(analysisJson);
-            String suggestedNextState = analysis.get("suggested_next_state").asText();
-            int engagementLevel = analysis.get("engagement_level").asInt();
+            // Parse analysis JSON safely — don't crash if malformed
+            try {
+                if (analysisJson != null) {
+                    JsonNode analysis = new ObjectMapper().readTree(analysisJson);
+                    if (analysis.has("suggested_next_state")) {
+                        suggestedNextState = analysis.get("suggested_next_state").asText();
+                    }
+                    if (analysis.has("engagement_level")) {
+                        engagementLevel = analysis.get("engagement_level").asInt();
+                    }
+                    if (analysis.has("current_phase")) {
+                        state.setCurrentPhase(analysis.get("current_phase").asText());
+                    }
+                }
+            } catch (Exception jsonEx) {
+                log.warn("Failed to parse analysis JSON — using defaults. Fan: {}", onlyfansUserId, jsonEx);
+            }
 
             scriptAnalyticsService.trackResponse(
                 creator.getCreatorId(),
@@ -329,8 +373,7 @@ public class OnlyFansChatbotService {
             );
 
             state.setMessageCount(state.getMessageCount() != null ? state.getMessageCount() + 1 : 1);
-            state.setCurrentPhase(analysis.has("current_phase") ? analysis.get("current_phase").asText() : state.getCurrentState());
-            
+
             scriptEngineService.updateConversationState(state, suggestedNextState, scriptCategory);
 
             if (scriptCategory.equals("LOCK_SALE") || scriptCategory.equals("LEAD_OPPORTUNITY")) {
@@ -680,6 +723,17 @@ public class OnlyFansChatbotService {
             return true;
         }
         return false;
+    }
+
+    /** Generate a simple fallback response when AI is down, so the fan doesn't get silence. */
+    private String generateFallbackResponse(String fanMessage) {
+        String[] fallbacks = {
+            "hey :) give me a sec, just got caught up with something",
+            "hiii sorry one moment haha",
+            "heyyy hold on one sec for me",
+            "hey babe let me get back to you in a min :)"
+        };
+        return fallbacks[new java.util.Random().nextInt(fallbacks.length)];
     }
 
     /** Try to extract country from message (e.g. "I'm from the US", "UK", "America") or infer from language; store on fan. */

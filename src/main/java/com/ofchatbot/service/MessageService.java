@@ -1,5 +1,7 @@
 package com.ofchatbot.service;
 
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.ofchatbot.entity.Message;
 import com.ofchatbot.repository.MessageRepository;
 import lombok.RequiredArgsConstructor;
@@ -9,6 +11,7 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
+import java.util.ArrayList;
 import java.util.List;
 
 @Service
@@ -120,6 +123,76 @@ public class MessageService {
             .toList();
     }
     
+    /**
+     * Import past chat messages from the OF API response JSON.
+     * Called once per fan to backfill conversation history from before the webhook was set up.
+     */
+    @Transactional
+    public int importChatHistory(String chatHistoryJson, String creatorId, String contactId, String accountId) {
+        if (chatHistoryJson == null || chatHistoryJson.isBlank()) return 0;
+
+        try {
+            ObjectMapper mapper = new ObjectMapper();
+            JsonNode root = mapper.readTree(chatHistoryJson);
+
+            // The API may return { "data": [...] } or just [...]
+            JsonNode messagesNode = root.isArray() ? root : (root.has("data") ? root.get("data") : root);
+            if (!messagesNode.isArray()) {
+                log.warn("Chat history response is not an array — skipping import for contact {}", contactId);
+                return 0;
+            }
+
+            List<Message> toSave = new ArrayList<>();
+            for (JsonNode msg : messagesNode) {
+                String text = msg.has("text") ? msg.get("text").asText("") : "";
+                if (text.isBlank()) continue;
+
+                // Strip HTML tags
+                text = text.replaceAll("<[^>]*>", "").trim();
+                if (text.isBlank()) continue;
+
+                String externalId = msg.has("id") ? msg.get("id").asText(null) : null;
+
+                // Skip if already imported
+                if (externalId != null && messageRepository.findByExternalMessageId(externalId).isPresent()) {
+                    continue;
+                }
+
+                // Determine role: if fromUser.id == accountId → bot, otherwise → user
+                String role = "user";
+                if (msg.has("fromUser") && msg.get("fromUser").has("id")) {
+                    String fromId = msg.get("fromUser").get("id").asText("");
+                    if (fromId.equals(accountId)) {
+                        role = "bot";
+                    }
+                }
+
+                String createdAt = msg.has("createdAt") ? msg.get("createdAt").asText(null) : null;
+
+                Message message = new Message();
+                message.setCreatorId(creatorId);
+                message.setContactId(contactId);
+                message.setRole(role);
+                message.setText(text);
+                message.setPlatform("onlyfans");
+                message.setTimestamp(createdAt != null ? parseTimestamp(createdAt) : LocalDateTime.now());
+                message.setCreatedAt(LocalDateTime.now());
+                message.setExternalMessageId(externalId);
+                toSave.add(message);
+            }
+
+            if (!toSave.isEmpty()) {
+                messageRepository.saveAll(toSave);
+                log.info("Imported {} past messages for contact {}", toSave.size(), contactId);
+            }
+            return toSave.size();
+
+        } catch (Exception e) {
+            log.warn("Failed to import chat history for contact {}: {}", contactId, e.getMessage());
+            return 0;
+        }
+    }
+
     private LocalDateTime parseTimestamp(String timestamp) {
         try {
             if (timestamp.contains(":") && timestamp.length() <= 5) {
