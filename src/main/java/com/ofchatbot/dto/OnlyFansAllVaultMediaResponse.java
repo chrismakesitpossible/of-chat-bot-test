@@ -36,7 +36,10 @@ public class OnlyFansAllVaultMediaResponse {
         
         @JsonProperty("duration")
         private Integer duration;
-        
+
+        @JsonProperty("createdAt")
+        private String createdAt;
+
         @JsonProperty("hasMedia")
         private Boolean hasMedia;
         

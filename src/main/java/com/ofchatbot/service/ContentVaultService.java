@@ -248,7 +248,7 @@ public class ContentVaultService {
         try {
             List<OnlyFansAllVaultMediaResponse.MediaItem> mediaItems = fetchVaultListMedia(vaultListId);
             if (!mediaItems.isEmpty()) {
-                syncVaultMediaFromVaultEndpoint(vault.getId(), mediaItems);
+                syncVaultMediaFromVaultEndpoint(vault.getId(), mediaItems, vault.getScriptId());
                 log.info("Synced vault list {} '{}' ({}): {} media items (via /media/vault list filter)",
                     vaultListId, vaultName != null ? vaultName : "Unnamed", category, mediaItems.size());
             } else {
@@ -343,6 +343,12 @@ public class ContentVaultService {
                             mediaItem.setDuration(item.path("duration").asInt());
                         }
 
+                        // Capture upload timestamp for level assignment
+                        String createdAtStr = item.path("createdAt").asText(null);
+                        if (createdAtStr != null && !createdAtStr.isBlank()) {
+                            mediaItem.setCreatedAt(createdAtStr);
+                        }
+
                         // Try to capture media name/caption from API (field varies by provider)
                         String mediaName = item.path("text").asText(null);
                         if (mediaName == null || mediaName.isBlank()) mediaName = item.path("name").asText(null);
@@ -422,7 +428,8 @@ public class ContentVaultService {
     private static final java.util.regex.Pattern MEDIA_LEVEL_PATTERN =
         java.util.regex.Pattern.compile("^L(\\d)\\s*-", java.util.regex.Pattern.CASE_INSENSITIVE);
 
-    private void syncVaultMediaFromVaultEndpoint(Long contentVaultId, List<OnlyFansAllVaultMediaResponse.MediaItem> mediaItems) {
+    private void syncVaultMediaFromVaultEndpoint(Long contentVaultId, List<OnlyFansAllVaultMediaResponse.MediaItem> mediaItems, String scriptId) {
+        // First pass: save all media items
         for (OnlyFansAllVaultMediaResponse.MediaItem item : mediaItems) {
             Optional<VaultMedia> existingOpt = vaultMediaRepository.findByContentVaultIdAndMediaId(contentVaultId, item.getId());
 
@@ -457,6 +464,81 @@ public class ContentVaultService {
             }
 
             vaultMediaRepository.save(media);
+        }
+
+        // Second pass: for script vaults where the API doesn't provide filenames (no levels parsed),
+        // assign levels by upload timestamp order (oldest batch = L1, newest = L6).
+        if (scriptId != null && !scriptId.isBlank()) {
+            List<VaultMedia> allMedia = vaultMediaRepository.findByContentVaultId(contentVaultId);
+            boolean anyLevelsSet = allMedia.stream().anyMatch(m -> m.getLevel() != null);
+            if (!anyLevelsSet && !allMedia.isEmpty()) {
+                assignLevelsByTimestampBatch(mediaItems, contentVaultId);
+            }
+        }
+    }
+
+    /**
+     * Assign script levels (L1-L6) to media based on upload timestamp batches.
+     * Media uploaded within 60 seconds of each other belong to the same batch.
+     * Batches are ordered oldest-first: batch 1 = L1, batch 2 = L2, etc.
+     */
+    private void assignLevelsByTimestampBatch(List<OnlyFansAllVaultMediaResponse.MediaItem> mediaItems, Long contentVaultId) {
+        // Sort by createdAt (oldest first)
+        List<OnlyFansAllVaultMediaResponse.MediaItem> sorted = mediaItems.stream()
+            .filter(m -> m.getCreatedAt() != null && !m.getCreatedAt().isBlank())
+            .sorted(java.util.Comparator.comparing(OnlyFansAllVaultMediaResponse.MediaItem::getCreatedAt))
+            .toList();
+
+        if (sorted.isEmpty()) {
+            log.warn("No createdAt timestamps available — cannot assign levels by batch for vault {}", contentVaultId);
+            return;
+        }
+
+        // Group into batches: items within 60 seconds of each other
+        List<List<String>> batches = new ArrayList<>();
+        List<String> currentBatch = new ArrayList<>();
+        String prevTimestamp = null;
+
+        for (OnlyFansAllVaultMediaResponse.MediaItem item : sorted) {
+            if (prevTimestamp != null && !isWithinSeconds(prevTimestamp, item.getCreatedAt(), 60)) {
+                batches.add(currentBatch);
+                currentBatch = new ArrayList<>();
+            }
+            currentBatch.add(item.getId());
+            prevTimestamp = item.getCreatedAt();
+        }
+        if (!currentBatch.isEmpty()) {
+            batches.add(currentBatch);
+        }
+
+        // Assign levels L1 through L6 (oldest batch = L1)
+        int maxLevel = Math.min(batches.size(), 6);
+        for (int i = 0; i < maxLevel; i++) {
+            int level = i + 1;
+            for (String mediaId : batches.get(i)) {
+                vaultMediaRepository.findByContentVaultIdAndMediaId(contentVaultId, mediaId)
+                    .ifPresent(media -> {
+                        media.setLevel(level);
+                        vaultMediaRepository.save(media);
+                    });
+            }
+            log.info("Assigned L{} to {} media items (batch {})", level, batches.get(i).size(), i + 1);
+        }
+
+        // Any remaining batches beyond L6 stay unassigned
+        if (batches.size() > 6) {
+            log.info("{} extra batches beyond L6 left unassigned", batches.size() - 6);
+        }
+    }
+
+    /** Check if two ISO timestamp strings are within N seconds of each other. */
+    private static boolean isWithinSeconds(String ts1, String ts2, long maxSeconds) {
+        try {
+            java.time.OffsetDateTime t1 = java.time.OffsetDateTime.parse(ts1);
+            java.time.OffsetDateTime t2 = java.time.OffsetDateTime.parse(ts2);
+            return Math.abs(java.time.Duration.between(t1, t2).getSeconds()) <= maxSeconds;
+        } catch (Exception e) {
+            return false;
         }
     }
 
@@ -618,23 +700,35 @@ public class ContentVaultService {
      */
     public List<VaultMedia> getMediaForScriptLevel(String creatorId, String scriptId, int level, Long fanId) {
         String resolvedCid = resolveVaultCreatorId();
-        Optional<ContentVault> vaultOpt = contentVaultRepository.findByCreatorIdAndScriptIdAndLevel(creatorId, scriptId, level);
-        if (vaultOpt.isEmpty() && !resolvedCid.equals(creatorId)) {
-            vaultOpt = contentVaultRepository.findByCreatorIdAndScriptIdAndLevel(resolvedCid, scriptId, level);
-            if (vaultOpt.isPresent()) {
-                log.info("Resolved script {} level {} vault using vault creator id {} (fan creator was {})", scriptId, level, resolvedCid, creatorId);
+
+        // Strategy 1: Find vault with media tagged at this level (single-list vault like SO5)
+        List<ContentVault> scriptVaults = contentVaultRepository.findByCreatorIdAndScriptId(resolvedCid, scriptId);
+        if (scriptVaults.isEmpty() && !resolvedCid.equals(creatorId)) {
+            scriptVaults = contentVaultRepository.findByCreatorIdAndScriptId(creatorId, scriptId);
+        }
+        for (ContentVault vault : scriptVaults) {
+            List<VaultMedia> list = vaultMediaRepository.findRandomUnpurchasedMediaByLevel(vault.getId(), fanId, level, 20);
+            if (!list.isEmpty()) {
+                log.info("Script {} level {}: {} unpurchased items for fan {} (from vault '{}')", scriptId, level, list.size(), fanId, vault.getName());
+                return list;
             }
         }
-        if (vaultOpt.isEmpty()) {
-            log.warn("No vault found for script {} level {} (creator {}; also tried vault creator {})", scriptId, level, creatorId, resolvedCid);
-            return List.of();
+
+        // Strategy 2: Fall back to separate vault-per-level (S01 - Lv.X pattern)
+        Optional<ContentVault> vaultOpt = contentVaultRepository.findByCreatorIdAndScriptIdAndLevel(resolvedCid, scriptId, level);
+        if (vaultOpt.isEmpty() && !resolvedCid.equals(creatorId)) {
+            vaultOpt = contentVaultRepository.findByCreatorIdAndScriptIdAndLevel(creatorId, scriptId, level);
         }
-        ContentVault vault = vaultOpt.get();
-        List<VaultMedia> list = vaultMediaRepository.findRandomUnpurchasedMediaMultiple(vault.getId(), fanId, 20);
-        if (!list.isEmpty()) {
-            log.info("Script {} level {}: {} unpurchased items for fan {}", scriptId, level, list.size(), fanId);
+        if (vaultOpt.isPresent()) {
+            List<VaultMedia> list = vaultMediaRepository.findRandomUnpurchasedMediaMultiple(vaultOpt.get().getId(), fanId, 20);
+            if (!list.isEmpty()) {
+                log.info("Script {} level {}: {} unpurchased items for fan {} (vault-per-level fallback)", scriptId, level, list.size(), fanId);
+                return list;
+            }
         }
-        return list;
+
+        log.warn("No media found for script {} level {} (creator {})", scriptId, level, creatorId);
+        return List.of();
     }
 
     public List<VaultMedia> getMediaBundleForLevel(Integer level, Long fanId) {
