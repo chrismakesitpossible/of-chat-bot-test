@@ -313,10 +313,9 @@ public class OnlyFansChatbotService {
             log.info("Conversation history for fan {}: {}", onlyfansUserId, conversationHistory);
             log.info("Batched message text being sent to AI: {}", batchedMessageText);
 
-            // If this message is a clear "send me content / another one" moment AND
-            // we're going to handle it via PPV, skip the extra long ENGAGEMENT reply
-            // so the vibe stays focused on the offer.
-            if (!explicitPurchaseIntent) {
+            // Always generate a conversational response — even with purchase intent.
+            // PPV will follow separately if appropriate; never leave the fan in silence.
+            {
                 String response = null;
                 try {
                     response = anthropicService.generateScriptBasedResponse(
@@ -528,12 +527,14 @@ public class OnlyFansChatbotService {
 
     // Regex classifiers replace API calls — saves 3-5 API calls per message (Issue #4)
     private static final Pattern PURCHASE_INTENT_PATTERN = Pattern.compile(
-        "(?i)(send (me |it|them)|show me|got any|have any|what (do you |content|videos?|pics?|photos?)" +
-        "|i('ll| will| wanna| want to) (buy|pay|unlock|purchase|see)" +
+        "(?i)(send (me |it|them)|show me (something|more|content|vid|pic|photo)" +
+        "|got any (content|vid|pic|photo)|have any (content|vid|pic|photo)" +
+        "|what (do you |content|videos?|pics?|photos?)" +
+        "|i('ll| will| wanna| want to) (buy|pay|unlock|purchase)" +
         "|how much|what('s| is) (the price|it cost)" +
         "|another (one|vid|video|pic|photo)" +
         "|more (content|videos?|pics?|photos?)" +
-        "|can i (see|get|buy|have)" +
+        "|can i (see|get|buy|have) (some|more|your|the|a) ?(content|vid|pic|photo|set|ppv)" +
         "|\\$\\d+|send for)"
     );
 
