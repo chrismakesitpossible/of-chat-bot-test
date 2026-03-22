@@ -65,6 +65,7 @@ public class PPVService {
     private final PeakInterestDetectionService peakInterestDetectionService;
     private final PricingLadderService pricingLadderService;
     private final PPVPurchaseService ppvPurchaseService;
+    private final OnlyFansApiService onlyFansApiService;
 
     @Value("${onlyfans.api.key}")
     private String apiKey;

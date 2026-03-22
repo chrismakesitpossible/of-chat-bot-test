@@ -18,15 +18,15 @@ public class PPVPurchaseService {
     
     private final PPVOfferRepository ppvOfferRepository;
     private final FanPurchaseRepository fanPurchaseRepository;
-    private final ShowerScriptService showerScriptService;
-    
+    private final ScriptService scriptService;
+
     public void recordPPVPurchase(Long fanId, Double purchaseAmount) {
         recordPPVPurchase(fanId, purchaseAmount, null, null);
     }
 
     /**
-     * Record PPV purchase and advance script level if the purchased offer was a Shower script offer.
-     * When Shower L6 is purchased, sends L7 after-care and marks script completed (never run twice).
+     * Record PPV purchase and advance script level if the purchased offer was a script offer.
+     * When L6 is purchased, sends L7 after-care and marks script completed (never run twice).
      */
     public void recordPPVPurchase(Long fanId, Double purchaseAmount, String chatId, com.ofchatbot.entity.Creator creator) {
         List<PPVOffer> unpurchasedOffers = ppvOfferRepository.findByFanIdAndPurchasedFalse(fanId);
@@ -50,8 +50,8 @@ public class PPVPurchaseService {
                 log.info("Recorded PPV purchase for fan {}: Level {}, ${}", 
                     fanId, offer.getLevel(), purchaseAmount);
 
-                if (chatId != null && creator != null && ShowerScriptService.SCRIPT_ID_SHOWER.equals(offer.getScriptId()) && offer.getScriptLevel() != null) {
-                    showerScriptService.onShowerPurchase(fanId, offer.getScriptLevel(), chatId, creator);
+                if (chatId != null && creator != null && ScriptService.SCRIPT_ID.equals(offer.getScriptId()) && offer.getScriptLevel() != null) {
+                    scriptService.onScriptPurchase(fanId, offer.getScriptLevel(), chatId, creator);
                 }
                 return;
             }

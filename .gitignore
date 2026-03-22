@@ -35,7 +35,7 @@ build/
 # Scripts, logs, docs, data
 *.sh
 *.txt
-!src/main/resources/sheeny-voice-examples.txt
+!src/main/resources/voice-examples.txt
 *.sql
 *.log
 *.md

@@ -109,12 +109,12 @@ public class ContentVaultService {
             }
 
             String cid = resolveVaultCreatorId();
-            long s01Count = contentVaultRepository.findByCreatorId(cid).stream()
-                .filter(v -> "S01".equals(v.getScriptId()))
+            long scriptVaultCount = contentVaultRepository.findByCreatorId(cid).stream()
+                .filter(v -> v.getScriptId() != null)
                 .count();
-            log.info("Successfully synced {} vault lists (S01 Shower script vaults: {})", vaultLists.size(), s01Count);
-            if (s01Count == 0) {
-                log.warn("No S01 Shower script vaults found. Create OnlyFans vault folders named exactly 'S01 - Lv.0 - Solo Shower - White Robe' through 'S01 - Lv.7 - Solo Shower - White Robe', then restart. You can run: python3 create_s01_shower_folders.py");
+            log.info("Successfully synced {} vault lists ({} script vaults detected)", vaultLists.size(), scriptVaultCount);
+            if (scriptVaultCount == 0) {
+                log.warn("No script vaults found. Name vault folders with a script prefix like 'S01 - Lv.0 - ...' or 'SO5 - Solo - ...' and restart.");
             }
         } catch (Exception e) {
             log.error("Failed to fetch vault lists from OnlyFans API", e);
@@ -175,12 +175,12 @@ public class ContentVaultService {
         String cid = resolveVaultCreatorId();
         out.put("vault_creator_id_resolved", cid);
 
-        List<ContentVault> s01Vaults = contentVaultRepository.findByCreatorId(cid).stream()
-            .filter(v -> "S01".equals(v.getScriptId()))
+        List<ContentVault> scriptVaults = contentVaultRepository.findByCreatorId(cid).stream()
+            .filter(v -> v.getScriptId() != null)
             .sorted(java.util.Comparator.comparing(ContentVault::getLevel))
             .toList();
-        List<Map<String, Object>> dbS01 = new ArrayList<>();
-        for (ContentVault v : s01Vaults) {
+        List<Map<String, Object>> dbScriptVaults = new ArrayList<>();
+        for (ContentVault v : scriptVaults) {
             Map<String, Object> row = new LinkedHashMap<>();
             row.put("creatorId", v.getCreatorId());
             row.put("scriptId", v.getScriptId());
@@ -188,15 +188,12 @@ public class ContentVaultService {
             row.put("name", v.getName());
             row.put("vaultListId", v.getVaultListId());
             row.put("mediaCount", v.getMediaCount());
-            dbS01.add(row);
+            dbScriptVaults.add(row);
         }
-        out.put("db_s01_vaults", dbS01);
+        out.put("db_script_vaults", dbScriptVaults);
 
-        List<ContentVault> anyS01 = contentVaultRepository.findByCreatorId(cid).stream()
-            .filter(v -> "S01".equals(v.getScriptId()))
-            .toList();
-        if (anyS01.isEmpty() && !apiFolderNames.isEmpty()) {
-            out.put("hint", "API has folders but DB has no S01 vaults for creator " + cid + ". Run sync (restart app) and ensure Creator row has onlyfans_account_id=" + accountId + " so vaults are stored under creator_id.");
+        if (scriptVaults.isEmpty() && !apiFolderNames.isEmpty()) {
+            out.put("hint", "API has folders but DB has no script vaults for creator " + cid + ". Name folders with script prefix (e.g. 'SO5 - Solo - ...') and restart.");
         }
         return out;
     }
@@ -218,16 +215,30 @@ public class ContentVaultService {
         vault.setPhotosCount(vaultListData.getPhotosCount());
         vault.setVideosCount(vaultListData.getVideosCount());
 
-        // Parse S01 - Lv.X - Solo Shower - White Robe → script_id = S01, level = X (0-7). Allow optional space after "Lv." (e.g. "Lv. 0").
+        // Parse script ID and level from vault folder name.
+        // Supports two patterns:
+        //   1. "S01 - Lv.X - Solo Shower - White Robe" → script_id = S01, level = X
+        //   2. "SO5 - Solo - Before gym" → script_id = SO5, level determined per-media from filenames (L1-L7)
         if (vaultName != null) {
-            java.util.regex.Pattern pattern = java.util.regex.Pattern.compile("S01\\s*-\\s*Lv\\.?\\s*(\\d)\\s*-", java.util.regex.Pattern.CASE_INSENSITIVE);
-            java.util.regex.Matcher matcher = pattern.matcher(vaultName.trim());
-            if (matcher.find()) {
-                int scriptLevel = Integer.parseInt(matcher.group(1));
+            // Pattern 1: S01 - Lv.X - ...
+            java.util.regex.Pattern lvPattern = java.util.regex.Pattern.compile("(S\\w+)\\s*-\\s*Lv\\.?\\s*(\\d)\\s*-", java.util.regex.Pattern.CASE_INSENSITIVE);
+            java.util.regex.Matcher lvMatcher = lvPattern.matcher(vaultName.trim());
+            if (lvMatcher.find()) {
+                String scriptId = lvMatcher.group(1).toUpperCase();
+                int scriptLevel = Integer.parseInt(lvMatcher.group(2));
                 if (scriptLevel >= 0 && scriptLevel <= 7) {
-                    vault.setScriptId("S01");
+                    vault.setScriptId(scriptId);
                     vault.setLevel(scriptLevel);
-                    log.info("Parsed S01 Shower Lv.{} from folder: {}", scriptLevel, vaultName);
+                    log.info("Parsed {} Lv.{} from folder: {}", scriptId, scriptLevel, vaultName);
+                }
+            } else {
+                // Pattern 2: "SO5 - Solo - ..." → script_id from prefix, levels parsed from media names later
+                java.util.regex.Pattern scriptPattern = java.util.regex.Pattern.compile("^(S\\w+)\\s*-", java.util.regex.Pattern.CASE_INSENSITIVE);
+                java.util.regex.Matcher scriptMatcher = scriptPattern.matcher(vaultName.trim());
+                if (scriptMatcher.find()) {
+                    String scriptId = scriptMatcher.group(1).toUpperCase();
+                    vault.setScriptId(scriptId);
+                    log.info("Parsed script {} from folder: {} (levels will be parsed from media names)", scriptId, vaultName);
                 }
             }
         }
@@ -332,6 +343,16 @@ public class ContentVaultService {
                             mediaItem.setDuration(item.path("duration").asInt());
                         }
 
+                        // Try to capture media name/caption from API (field varies by provider)
+                        String mediaName = item.path("text").asText(null);
+                        if (mediaName == null || mediaName.isBlank()) mediaName = item.path("name").asText(null);
+                        if (mediaName == null || mediaName.isBlank()) mediaName = item.path("caption").asText(null);
+                        if (mediaName == null || mediaName.isBlank()) mediaName = item.path("title").asText(null);
+                        if (mediaName != null && !mediaName.isBlank()) {
+                            // Store as a custom field — we'll read it back in syncVaultMediaFromVaultEndpoint
+                            mediaItem.setPreview(mediaName); // reuse preview field to carry the name
+                        }
+
                         all.add(mediaItem);
                         addedThisPage++;
                     }
@@ -378,6 +399,18 @@ public class ContentVaultService {
             media.setUrl(item.getUrl());
             media.setDuration(item.getDuration());
 
+            // Try preview field as media name fallback
+            if (item.getPreview() != null && !item.getPreview().isBlank() && !item.getPreview().startsWith("http")) {
+                media.setName(item.getPreview());
+                java.util.regex.Matcher levelMatcher = MEDIA_LEVEL_PATTERN.matcher(item.getPreview().trim());
+                if (levelMatcher.find()) {
+                    int level = Integer.parseInt(levelMatcher.group(1));
+                    if (level >= 0 && level <= 7) {
+                        media.setLevel(level);
+                    }
+                }
+            }
+
             vaultMediaRepository.save(media);
 
             if (item.getDuration() != null) {
@@ -385,6 +418,9 @@ public class ContentVaultService {
             }
         }
     }
+
+    private static final java.util.regex.Pattern MEDIA_LEVEL_PATTERN =
+        java.util.regex.Pattern.compile("^L(\\d)\\s*-", java.util.regex.Pattern.CASE_INSENSITIVE);
 
     private void syncVaultMediaFromVaultEndpoint(Long contentVaultId, List<OnlyFansAllVaultMediaResponse.MediaItem> mediaItems) {
         for (OnlyFansAllVaultMediaResponse.MediaItem item : mediaItems) {
@@ -406,6 +442,19 @@ public class ContentVaultService {
             }
             media.setUrl(item.getUrl());
             media.setDuration(item.getDuration());
+
+            // Store media name and parse level from "L1 - ...", "L2 - ..." prefix
+            String mediaName = item.getPreview(); // carried from JSON parsing
+            if (mediaName != null && !mediaName.isBlank()) {
+                media.setName(mediaName);
+                java.util.regex.Matcher levelMatcher = MEDIA_LEVEL_PATTERN.matcher(mediaName.trim());
+                if (levelMatcher.find()) {
+                    int level = Integer.parseInt(levelMatcher.group(1));
+                    if (level >= 0 && level <= 7) {
+                        media.setLevel(level);
+                    }
+                }
+            }
 
             vaultMediaRepository.save(media);
         }
@@ -563,7 +612,7 @@ public class ContentVaultService {
 
     /**
      * All unpurchased media from the vault for the given script + level (e.g. S01 Lv.0–Lv.7).
-     * Used by Shower script to send content from the correct folder.
+     * Used by content script to send content from the correct folder.
      * creatorId must be the Creator entity's creator_id (vaults are stored under that id at sync).
      * If no vault is found for the given creatorId, tries the resolved vault creator (same as sync) to handle creator_id vs onlyfans_account_id mismatch.
      */

@@ -44,7 +44,7 @@ public class PPVOffer {
     
     private LocalDateTime purchasedAt;
 
-    /** Script offer (e.g. S01 Shower); when set, on purchase we advance script level. */
+    /** Script offer (e.g. SO5); when set, on purchase we advance script level. */
     @Column(name = "script_id", length = 50)
     private String scriptId;
 

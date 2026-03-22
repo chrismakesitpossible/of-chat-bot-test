@@ -108,5 +108,29 @@ public interface VaultMediaRepository extends JpaRepository<VaultMedia, Long> {
         @Param("fanId") Long fanId,
         @Param("limit") int limit
     );
+
+    /** Find unpurchased media at a specific level (for topic-based content selection). */
+    @Query(value = "SELECT * FROM vault_media WHERE content_vault_id = :vaultId " +
+           "AND level = :level " +
+           "AND media_id NOT IN (SELECT media_id FROM fan_purchases WHERE fan_id = :fanId) " +
+           "ORDER BY RANDOM() LIMIT :limit", nativeQuery = true)
+    List<VaultMedia> findRandomUnpurchasedMediaByLevel(
+        @Param("vaultId") Long vaultId,
+        @Param("fanId") Long fanId,
+        @Param("level") int level,
+        @Param("limit") int limit
+    );
+
+    /** Find unpurchased media at or below a max level (for topic-based selection with explicitness gating). */
+    @Query(value = "SELECT * FROM vault_media WHERE content_vault_id = :vaultId " +
+           "AND level IS NOT NULL AND level <= :maxLevel " +
+           "AND media_id NOT IN (SELECT media_id FROM fan_purchases WHERE fan_id = :fanId) " +
+           "ORDER BY RANDOM() LIMIT :limit", nativeQuery = true)
+    List<VaultMedia> findRandomUnpurchasedMediaUpToLevel(
+        @Param("vaultId") Long vaultId,
+        @Param("fanId") Long fanId,
+        @Param("maxLevel") int maxLevel,
+        @Param("limit") int limit
+    );
 }
 

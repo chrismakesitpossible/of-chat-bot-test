@@ -37,6 +37,13 @@ public class VaultMedia {
 
     private Integer duration;
 
+    /** Media filename/caption from the vault (e.g. "L3 - tank top up, chest reveal"). */
+    @Column(columnDefinition = "TEXT")
+    private String name;
+
+    /** Script level parsed from the media name prefix (L1=1, L2=2, ... L7=7). Null if not a script media item. */
+    private Integer level;
+
     @Column(nullable = false)
     private LocalDateTime createdAt;
 

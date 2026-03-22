@@ -44,7 +44,7 @@ public class OnlyFansChatbotService {
     private final PeakInterestDetectionService peakInterestDetectionService;
     private final OrganicContentSuggestionService organicContentSuggestionService;
     private final TipPromptService tipPromptService;
-    private final ShowerScriptService showerScriptService;
+    private final ScriptService scriptService;
 
     @Value("${pricing.cold-days:7}")
     private int coldDays = 7;
@@ -353,13 +353,13 @@ public class OnlyFansChatbotService {
                     log.info("Peak interest moment detected for fan {}: {}", fan.getId(), peakReason);
                     
                     if (shouldSendPPV) {
-                        // When fan explicitly asked for content/send/preview/$60, always use main PPV — never shower script.
+                        // When fan explicitly asked for content/send/preview/$60, always use main PPV — never content script.
                         if (explicitPurchaseIntent) {
                             final Double priceHint = fanMentionedPrice;
                             responseTimingService.scheduleDelayedPPVWithTyping(chatId, creator.getCreatorId(), () ->
                                 ppvService.sendPPVOffer(fanForPpv, state, conversation, chatId, recentMessages, specificOrNicheRequest, reengagingForPpv, priceHint));
-                        } else if (showerScriptService.isOnShowerNotCompleted(fan.getId())) {
-                            if (!showerScriptService.sendShowerPPVOffer(fan, chatId, recentMessages)) {
+                        } else if (scriptService.isOnScriptNotCompleted(fan.getId())) {
+                            if (!scriptService.sendScriptPPVOffer(fan, chatId, recentMessages)) {
                                 ppvService.sendPPVOffer(fan, state, conversation, chatId, recentMessages, specificOrNicheRequest, reengagingAfterCold);
                             }
                         } else {
@@ -367,14 +367,14 @@ public class OnlyFansChatbotService {
                         }
                     }
                 } else if (shouldSendPPV) {
-                    // When fan explicitly asked for content/send/preview/$60, always use main PPV — never shower script.
+                    // When fan explicitly asked for content/send/preview/$60, always use main PPV — never content script.
                     if (explicitPurchaseIntent) {
                         final Double priceHint = fanMentionedPrice;
                         responseTimingService.scheduleDelayedPPVWithTyping(chatId, creator.getCreatorId(), () -> {
                             ppvService.sendPPVOffer(fanForPpv, state, conversation, chatId, recentMessages, specificOrNicheRequest, reengagingForPpv, priceHint);
                         });
-                    } else if (showerScriptService.isOnShowerNotCompleted(fan.getId())) {
-                        if (!showerScriptService.sendShowerPPVOffer(fan, chatId, recentMessages)) {
+                    } else if (scriptService.isOnScriptNotCompleted(fan.getId())) {
+                        if (!scriptService.sendScriptPPVOffer(fan, chatId, recentMessages)) {
                             ppvService.sendPPVOffer(fan, state, conversation, chatId, recentMessages, specificOrNicheRequest, reengagingAfterCold);
                         }
                     } else {
