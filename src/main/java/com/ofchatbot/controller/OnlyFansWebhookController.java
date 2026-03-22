@@ -58,9 +58,9 @@ public class OnlyFansWebhookController {
 
                         case "messages.received":
                             String fanId = webhook.getPayload().getFromUser().getId().toString();
-                            // Human takeover: if creator sent this message, mark the fan and skip bot (Issue #19)
+                            // Skip webhooks for messages sent by the creator/bot account
                             if (fanId.equals(accountId)) {
-                                handleCreatorSentMessage(webhook, creator);
+                                log.debug("Ignoring webhook for creator-sent message (account {})", accountId);
                                 break;
                             }
                             messageBatchingService.handleIncomingMessage(fanId, () -> {

@@ -139,8 +139,6 @@ public class OnlyFansChatbotService {
         return html.replaceAll("<[^>]*>", "").trim();
     }
 
-    /** Human takeover cooldown: bot stays silent this long after creator manually messages a fan. */
-    private static final long HUMAN_TAKEOVER_MINUTES = 30;
 
     public void processIncomingMessage(OnlyFansWebhookPayload webhook, Creator creator) {
         try {
@@ -156,18 +154,6 @@ public class OnlyFansChatbotService {
 
             Optional<Fan> fanOpt = fanService.findByOnlyfansUserId(onlyfansUserId);
 
-            // Human takeover: if creator recently messaged this fan, stay silent (Issue #19)
-            if (fanOpt.isPresent()) {
-                LocalDateTime humanReplyAt = fanOpt.get().getLastHumanReplyAt();
-                if (humanReplyAt != null && ChronoUnit.MINUTES.between(humanReplyAt, LocalDateTime.now()) < HUMAN_TAKEOVER_MINUTES) {
-                    log.info("Human takeover active for fan {} — creator messaged {} min ago, bot staying silent",
-                        onlyfansUserId, ChronoUnit.MINUTES.between(humanReplyAt, LocalDateTime.now()));
-                    // Still save the incoming message for history
-                    messageService.saveMessage(creator.getCreatorId(), onlyfansUserId, "user", messageText,
-                        payload.getCreatedAt(), "onlyfans", payload.getId() != null ? String.valueOf(payload.getId()) : null);
-                    return;
-                }
-            }
             Fan fan;
             boolean reengagingAfterCold = false;
 
