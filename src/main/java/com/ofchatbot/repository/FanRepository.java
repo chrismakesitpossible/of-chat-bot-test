@@ -16,4 +16,5 @@ public interface FanRepository extends JpaRepository<Fan, Long> {
     boolean existsByContactId(String contactId);
     Optional<Fan> findByOnlyfansUsername(String onlyfansUsername);
     List<Fan> findByLastUpdatedBeforeAndOnlyfansUserIdIsNotNull(LocalDateTime inactiveSince);
+    List<Fan> findByLastUpdatedBetweenAndOnlyfansUserIdIsNotNull(LocalDateTime from, LocalDateTime to);
 }

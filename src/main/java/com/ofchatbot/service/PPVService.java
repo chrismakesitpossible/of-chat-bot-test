@@ -97,20 +97,9 @@ public class PPVService {
         long offerCount = ppvOfferRepository.countByFanId(fan.getId());
         boolean hasPurchasedBefore = contentVaultService.hasFanMadeAnyPurchase(fan.getId());
 
-        // First offer: send cheapest real content ($3 L1) instead of text-only teaser
+        // First offer: send a free (non-explicit) picture to build trust
         if (offerCount == 0) {
-            List<VaultMedia> firstMedia = contentVaultService.getMediaForPriceTierPersonalized(
-                fan.getId(), ContentCategory.SOLO, PricingLadderService.P_3_00, List.of(), List.of());
-            if (!firstMedia.isEmpty()) {
-                List<String> mediaIds = firstMedia.stream().map(VaultMedia::getMediaId).toList();
-                String pitch = generatePPVPitchByPrice(PricingLadderService.P_3_00, state, recentMessages, firstMedia.size(), "");
-                sendPPVMessage(chatId, pitch, mediaIds, PricingLadderService.P_3_00, fan.getCreatorId());
-                trackOffer(fan.getId(), firstMedia.size(), ContentCategory.SOLO.name(), PricingLadderService.P_3_00, mediaIds);
-                log.info("Sent first PPV to fan {} with {} media at $3", fan.getId(), firstMedia.size());
-                return;
-            }
-            // Fallback to text teaser if no media available
-            sendFreeTeaser(fan, state, chatId, recentMessages);
+            sendFreePreview(fan, state, chatId, recentMessages);
             return;
         }
 
@@ -301,11 +290,32 @@ public class PPVService {
     }
 
     private void sendFreeTeaser(Fan fan, ConversationState state, String chatId, List<Message> recentMessages) {
-        // Text-only tease — never send real media for free (Issue #1.1)
         String teaserMessage = generatePPVPitchByPrice(PricingLadderService.FREE, state, recentMessages, 0, "");
         onlyFansApiService.sendMessage(chatId, teaserMessage);
         trackOffer(fan.getId(), 0, ContentCategory.TEASER.name(), 0.0, null);
         log.info("Sent text-only teaser to fan {} (no free media)", fan.getId());
+    }
+
+    /** First interaction: send a cheap intro picture to build trust. OF minimum is $3 for PPV with media. */
+    private void sendFreePreview(Fan fan, ConversationState state, String chatId, List<Message> recentMessages) {
+        Set<String> alreadySent = getMediaIdsAlreadySentToFan(fan.getId());
+        // Try teaser-category content first, then solo
+        List<VaultMedia> previewMedia = contentVaultService.getMediaForPriceTierPersonalized(
+            fan.getId(), ContentCategory.TEASER, PricingLadderService.P_9_95, List.of(), alreadySent);
+        if (previewMedia.isEmpty()) {
+            previewMedia = contentVaultService.getMediaForPriceTierPersonalized(
+                fan.getId(), ContentCategory.SOLO, PricingLadderService.P_9_95, List.of(), alreadySent);
+        }
+        if (!previewMedia.isEmpty()) {
+            VaultMedia picked = previewMedia.get(new java.util.Random().nextInt(previewMedia.size()));
+            List<String> mediaIds = List.of(picked.getMediaId());
+            String pitch = generatePPVPitchByPrice(3.0, state, recentMessages, 1, "");
+            sendPPVMessage(chatId, pitch, 3.0, mediaIds, null);
+            trackOffer(fan.getId(), 1, ContentCategory.TEASER.name(), 3.0, String.join(",", mediaIds));
+            log.info("Sent intro preview to fan {} ($3, 1 item)", fan.getId());
+        } else {
+            sendFreeTeaser(fan, state, chatId, recentMessages);
+        }
     }
 
     private String generatePPVPitchByPrice(double price, ConversationState state, List<Message> recentMessages, int itemCount, String personalizationContext) {

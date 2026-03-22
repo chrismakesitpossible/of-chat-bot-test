@@ -12,34 +12,30 @@ import org.springframework.stereotype.Service;
 
 import java.time.LocalDateTime;
 import java.util.List;
-import java.util.stream.Collectors;
 
 @Service
 @RequiredArgsConstructor
 @Slf4j
 public class FollowUpService {
-    
+
     private final PPVOfferRepository ppvOfferRepository;
     private final FanRepository fanRepository;
     private final ConversationRepository conversationRepository;
     private final AnthropicService anthropicService;
     private final OnlyFansApiService onlyFansApiService;
     private final MessageService messageService;
-    
+
+    // ── PPV follow-up (5 min after offer) ───────────────────────────────
+
     @Scheduled(fixedRate = 60000)
     public void processFollowUps() {
         LocalDateTime now = LocalDateTime.now();
         LocalDateTime fiveMinutesAgo = now.minusMinutes(5);
-        LocalDateTime tenMinutesAgo = now.minusMinutes(10);
-        // We now only ever send a single follow-up per offer.
         List<PPVOffer> offersNeedingFollowUp = ppvOfferRepository.findOffersNeedingFollowUp(fiveMinutesAgo);
-        
+
         for (PPVOffer offer : offersNeedingFollowUp) {
             try {
-                LocalDateTime sentAt = offer.getSentAt();
-                int followUpCount = offer.getFollowUpCount();
-                
-                if (followUpCount == 0 && sentAt.isBefore(fiveMinutesAgo)) {
+                if (offer.getFollowUpCount() == 0 && offer.getSentAt().isBefore(fiveMinutesAgo)) {
                     sendFirstFollowUp(offer);
                 }
             } catch (Exception e) {
@@ -47,30 +43,29 @@ public class FollowUpService {
             }
         }
     }
-    
+
     private void sendFirstFollowUp(PPVOffer offer) {
         Fan fan = fanRepository.findById(offer.getFanId()).orElse(null);
         if (fan == null) {
             log.warn("Fan not found for offer {}", offer.getId());
             return;
         }
-        
+
         Conversation conversation = conversationRepository.findByFanId(fan.getId()).stream().findFirst().orElse(null);
         if (conversation == null) {
             log.warn("Conversation not found for fan {}", fan.getId());
             return;
         }
-        
+
         String followUpMessage = generateNaturalFollowUp(offer, conversation);
         String chatId = fan.getOnlyfansChatId();
 
         try {
             onlyFansApiService.sendMessage(chatId, followUpMessage);
         } catch (CannotMessageUserException e) {
-            // OnlyFans says we can't message this user (blocked, restricted, unsubscribed). Mark follow-up as attempted so we stop retrying.
             offer.setFollowUpCount(1);
             ppvOfferRepository.save(offer);
-            log.warn("Cannot message user (chat {}). Marked offer {} follow-up as attempted so we stop retrying.", chatId, offer.getId());
+            log.warn("Cannot message user (chat {}). Marked offer {} follow-up done.", chatId, offer.getId());
             return;
         }
 
@@ -78,7 +73,7 @@ public class FollowUpService {
         ppvOfferRepository.save(offer);
         log.info("Sent first follow-up for offer {} to fan {}", offer.getId(), fan.getId());
     }
-    
+
     private String generateNaturalFollowUp(PPVOffer offer, Conversation conversation) {
         String conversationContext = "No conversation history";
         if (conversation != null) {
@@ -113,7 +108,7 @@ public class FollowUpService {
             offer.getPrice(),
             conversationContext
         );
-        
+
         try {
             return anthropicService.generateResponse(
                 "You generate PPV follow-up messages only. Output only the message text. Never mention robots, bots, confusion, or meta-replies. Always write in ENGLISH only.",
@@ -125,5 +120,93 @@ public class FollowUpService {
             return "Still thinking about it? 😏";
         }
     }
-    
+
+    // ── Re-engagement (fan went quiet for 2-4 hours) ────────────────────
+
+    @Scheduled(fixedRate = 1800000) // every 30 minutes
+    public void processReengagement() {
+        LocalDateTime now = LocalDateTime.now();
+        LocalDateTime twoHoursAgo = now.minusHours(2);
+        LocalDateTime twentyFourHoursAgo = now.minusHours(24);
+
+        // Fans who were active in last 24h but stopped 2+ hours ago
+        List<Fan> quietFans = fanRepository.findByLastUpdatedBetweenAndOnlyfansUserIdIsNotNull(twentyFourHoursAgo, twoHoursAgo);
+
+        for (Fan fan : quietFans) {
+            try {
+                if (fan.getOnlyfansChatId() == null) continue;
+
+                // Only re-engage if the bot spoke last and the fan went silent
+                List<Message> recentMessages = messageService.getRecentMessages(fan.getContactId(), 10);
+                if (recentMessages.isEmpty()) continue;
+
+                Message lastMessage = recentMessages.get(recentMessages.size() - 1);
+                // If fan spoke last, they might come back on their own
+                if (lastMessage.isFromFan()) continue;
+                // If we already sent something within 2 hours (e.g. a previous nudge), skip
+                if (lastMessage.getTimestamp().isAfter(twoHoursAgo)) continue;
+
+                sendReengagementNudge(fan, recentMessages);
+            } catch (Exception e) {
+                log.error("Failed re-engagement for fan {}", fan.getId(), e);
+            }
+        }
+    }
+
+    private void sendReengagementNudge(Fan fan, List<Message> recentMessages) {
+        String displayName = fan.getOnlyfansDisplayName();
+
+        // Build short context from last few messages
+        StringBuilder context = new StringBuilder();
+        int start = Math.max(0, recentMessages.size() - 5);
+        for (int i = start; i < recentMessages.size(); i++) {
+            Message m = recentMessages.get(i);
+            context.append(m.isFromFan() ? "Fan" : "You").append(": ").append(m.getContent()).append("\n");
+        }
+
+        String prompt = String.format(
+            "Generate a short re-engagement message. The fan stopped replying ~2-4 hours ago.\n\n" +
+            "Fan name: %s\n" +
+            "Recent conversation:\n%s\n\n" +
+            "RULES:\n" +
+            "- 1 short message (3-10 words max)\n" +
+            "- Casual, slightly playful check-in\n" +
+            "- Can use their name\n" +
+            "- 1 emoji max, or none\n" +
+            "- Vibe examples: \"babe?\", \"you disappeared on me haha\", \"hellooo\", \"where'd you go :)\"\n" +
+            "- NEVER mention robots, bots, or automation\n" +
+            "- Respond with ONLY the message text.",
+            displayName != null ? displayName : "babe",
+            context.toString()
+        );
+
+        String nudge;
+        try {
+            nudge = anthropicService.generateResponse(
+                "You write short casual re-engagement messages. Output only the message text. Always write in ENGLISH only.",
+                prompt,
+                null
+            );
+        } catch (Exception e) {
+            log.error("Failed to generate re-engagement for fan {}", fan.getId(), e);
+            nudge = "heyy where'd you go :)";
+        }
+
+        if (nudge == null || nudge.isBlank()) {
+            nudge = "babe?";
+        }
+
+        String chatId = fan.getOnlyfansChatId();
+        try {
+            onlyFansApiService.sendMessage(chatId, nudge);
+        } catch (CannotMessageUserException e) {
+            log.warn("Cannot message fan {} for re-engagement (blocked/restricted)", fan.getId());
+            return;
+        }
+
+        // Save nudge as a bot message so we don't double-send on next cycle
+        messageService.saveMessage(fan.getCreatorId(), fan.getContactId(), "assistant", nudge, LocalDateTime.now().toString(), "onlyfans");
+        log.info("Sent re-engagement nudge to fan {} (chat {}): {}", fan.getId(), chatId, nudge);
+    }
+
 }
