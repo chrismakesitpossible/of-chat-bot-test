@@ -522,10 +522,12 @@ public class OnlyFansChatbotService {
         "|got any (content|vid|pic|photo)|have any (content|vid|pic|photo)" +
         "|what (do you |content|videos?|pics?|photos?)" +
         "|i('ll| will| wanna| want to) (buy|pay|unlock|purchase)" +
+        "|(i )?wanna see (your|you|more|some)" +
+        "|let me see|i want to see (your|you|more)" +
         "|how much|what('s| is) (the price|it cost)" +
         "|another (one|vid|video|pic|photo)" +
         "|more (content|videos?|pics?|photos?)" +
-        "|can i (see|get|buy|have) (some|more|your|the|a) ?(content|vid|pic|photo|set|ppv)" +
+        "|can i (see|get|buy|have) (some|more|your|the|a)" +
         "|\\$\\d+|send for)"
     );
 
