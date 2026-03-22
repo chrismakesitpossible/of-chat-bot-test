@@ -116,8 +116,8 @@ public class PeakInterestDetectionService {
                 return true;
             }
 
-            if (text.length() < 50 && text.chars().filter(ch -> ch == '😍' || ch == '🔥' ||
-                ch == '💦' || ch == '😈' || ch == '🥵').count() >= 2) {
+            if (text.length() < 50 && text.codePoints().filter(cp -> cp == 0x1F60D || cp == 0x1F525 ||
+                cp == 0x1F4A6 || cp == 0x1F608 || cp == 0x1F975).count() >= 2) {
                 log.debug("Excitement indicator: multiple excitement emojis");
                 return true;
             }
