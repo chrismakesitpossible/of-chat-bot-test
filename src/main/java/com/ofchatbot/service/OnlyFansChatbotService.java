@@ -328,7 +328,12 @@ public class OnlyFansChatbotService {
                     );
                 } catch (Exception genEx) {
                     log.error("AI response generation failed — using fallback. Fan: {}", onlyfansUserId, genEx);
+                }
+
+                // If AI returned nothing or empty, use fallback so fan never gets silence
+                if (response == null || response.isBlank()) {
                     response = generateFallbackResponse(batchedMessageText);
+                    log.warn("AI returned empty response for fan {} — using fallback", onlyfansUserId);
                 }
 
                 String replyToMessageId = shouldUseReplyTo(state, scriptCategory) ? externalMessageId : null;

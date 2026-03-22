@@ -308,16 +308,28 @@ public class OnlyFansWebhookController {
      */
     private void handleCreatorSentMessage(OnlyFansWebhookPayload webhook, Creator creator) {
         try {
-            // The payload user_id or other fields may identify the recipient;
-            // try to find the fan this chat belongs to via the webhook's user_id field
             String recipientId = webhook.getPayload().getUser_id();
             if (recipientId == null || recipientId.isBlank()) {
-                log.info("Creator sent message but no recipient ID in payload — skipping human takeover mark");
+                log.info("Creator sent message but no recipient ID in payload — skipping");
                 return;
             }
             java.util.Optional<Fan> fanOpt = fanService.findByOnlyfansUserId(recipientId);
             if (fanOpt.isPresent()) {
                 Fan fan = fanOpt.get();
+
+                // Check if the bot sent a message to this fan recently (within 60s).
+                // If so, this webhook is just the bot's own message echoing back — NOT a real human takeover.
+                java.util.List<com.ofchatbot.entity.Message> recentBotMsgs = messageService.getLastBotMessages(recipientId, 1);
+                if (!recentBotMsgs.isEmpty()) {
+                    long secondsSinceBotMsg = java.time.temporal.ChronoUnit.SECONDS.between(
+                        recentBotMsgs.get(0).getTimestamp(), java.time.LocalDateTime.now());
+                    if (secondsSinceBotMsg < 60) {
+                        log.info("Ignoring creator-sent webhook for fan {} — bot sent a message {}s ago (echo, not human takeover)",
+                            fan.getId(), secondsSinceBotMsg);
+                        return;
+                    }
+                }
+
                 fan.setLastHumanReplyAt(java.time.LocalDateTime.now());
                 fanService.saveFan(fan);
                 log.info("Human takeover: creator {} manually messaged fan {} — bot silent 30 min",
