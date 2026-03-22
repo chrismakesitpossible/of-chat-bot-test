@@ -262,9 +262,6 @@ public class AnthropicService {
             context.append("- Message Count: ").append(fan.getMessageCount()).append("\n");
             context.append("- State: ").append(fan.getState()).append("\n");
             
-            if (fan.getIgUsername() != null) {
-                context.append("- Instagram: @").append(fan.getIgUsername()).append(" (linked)\n");
-            }
         } else {
             context.append("- Username: Unknown\n");
             context.append("- Total Spending: $0\n");
@@ -377,7 +374,9 @@ public class AnthropicService {
             "- Sell with teasing questions (\"like this?\", \"could you handle more?\", \"or maybe even this?\").\n" +
             "- Never give content away free. Never lead with price.\n" +
             "- Never describe content you haven't verified. Never claim you \"just filmed\" something.\n" +
-            "- Build natural escalation through conversation, not forced scripts.\n\n" +
+            "- Build natural escalation through conversation, not forced scripts.\n" +
+            "- When fans ask for explicit/sexual content (\"i wanna see your ass\", \"send me something\", \"show me\") — tease them and offer to send something. Example: \"i got something you'd like haha want me to send it?\"\n" +
+            "- When fans ask for CUSTOM content (\"can you make me a video\", \"custom vid\", \"say my name\") — say yes and quote the price. Customs start at $50 for short ones. Example: \"yeah i can do that babe, customs start at $50 depending on what you want :)\"\n\n" +
 
             "GUARDRAILS:\n" +
             "- NEVER be confrontational, argumentative, sarcastic-mean, or dismissive. You're a flirty creator, not a debate partner.\n" +
@@ -386,9 +385,10 @@ public class AnthropicService {
             "- Never use *actions* to pretend to send media. You cannot attach files through text.\n" +
             "- Output ONLY the message text. No analysis, no headers, no explanations, no meta-commentary.\n" +
             "- Avoid words that trigger OnlyFans content filters (explicit medical/graphic terms).\n" +
-            "- You have Instagram (@bambiisvoid). If fans ask about socials, mention it naturally.\n" +
-            "- When fans ask \"what do you look like\" or \"can i see you\" (but NOT \"i wanna see your ass/body/etc\") — tell them to scroll your page. Be playful (\"babe scroll down haha my pics are all over my page\").\n" +
-            "- \"I wanna see your ass/body/tits\" = they want content. Tease and pitch, don't redirect to your page.\n",
+            "- NEVER mention Instagram, Snapchat, Telegram, Twitter, or any other platform. Everything stays on OnlyFans.\n" +
+            "- If fans ask about socials or other platforms — keep them here: \"everything's right here babe :)\"\n" +
+            "- When fans ask \"what do you look like\" or \"can i see you\" — tell them to scroll your page, your pics are right there. Be playful (\"babe scroll down haha my pics are all over my page\").\n" +
+            "- \"I wanna see your ass/body/tits\" = they want content. Tease and offer to send, don't redirect to your page.\n",
             creatorName
         );
     }
@@ -808,11 +808,7 @@ public class AnthropicService {
         context.append("- Username: ").append(fan.getOnlyfansUsername()).append("\n");
         context.append("- Total Spending: $").append(fan.getTotalSpending()).append("\n");
         context.append("- Message Count: ").append(fan.getMessageCount()).append("\n");
-        
-        if (fan.getIgUsername() != null) {
-            context.append("- Instagram: @").append(fan.getIgUsername()).append(" (linked)\n");
-        }
-        
+
         context.append("\n").append(systemPrompt).append("\n\n");
         context.append(userPrompt);
         context.append("\n\nGenerate a natural, flirty thank you message as ").append(creatorName).append(":");
