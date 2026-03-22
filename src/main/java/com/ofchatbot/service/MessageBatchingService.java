@@ -33,9 +33,14 @@ public class MessageBatchingService {
             
             batch.scheduledTask = scheduler.schedule(() -> {
                 synchronized (batch) {
-                    log.info("Processing batched messages for fan: {} (count: {})", fanId, batch.messageCount);
-                    processMessageTask.run();
-                    activeBatches.remove(fanId);
+                    try {
+                        log.info("Processing batched messages for fan: {} (count: {})", fanId, batch.messageCount);
+                        processMessageTask.run();
+                    } catch (Exception e) {
+                        log.error("CRITICAL: Message processing failed for fan {} — fan got silence!", fanId, e);
+                    } finally {
+                        activeBatches.remove(fanId);
+                    }
                 }
             }, 7, TimeUnit.SECONDS);
             

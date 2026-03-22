@@ -128,20 +128,20 @@ public class ResponseTimingService {
         boolean isActiveBackAndForth = minutesSinceLastMessage < 5 || isHotConversation;
 
         if (isActiveBackAndForth) {
-            // Variable human-like delay: mostly fast (5-30s) but sometimes takes 1-3 min
+            // Variable human-like delay: mostly fast, occasionally slower
             double roll = random.nextDouble();
-            if (roll < 0.30) {
-                // 30% chance: instant-ish reply (5-10s) — she was already looking at her phone
-                baseDelaySeconds = 5 + random.nextInt(6);
-            } else if (roll < 0.65) {
-                // 35% chance: quick reply (10-30s) — typing it out
-                baseDelaySeconds = 10 + random.nextInt(21);
-            } else if (roll < 0.85) {
-                // 20% chance: slight pause (30-90s) — got distracted for a sec
-                baseDelaySeconds = 30 + random.nextInt(61);
+            if (roll < 0.40) {
+                // 40% chance: instant-ish reply (3-8s)
+                baseDelaySeconds = 3 + random.nextInt(6);
+            } else if (roll < 0.75) {
+                // 35% chance: quick reply (8-20s)
+                baseDelaySeconds = 8 + random.nextInt(13);
+            } else if (roll < 0.92) {
+                // 17% chance: slight pause (20-45s)
+                baseDelaySeconds = 20 + random.nextInt(26);
             } else {
-                // 15% chance: takes a minute (90-180s) — doing something, came back
-                baseDelaySeconds = 90 + random.nextInt(91);
+                // 8% chance: takes a moment (45-90s)
+                baseDelaySeconds = 45 + random.nextInt(46);
             }
         } else if (minutesSinceLastMessage < 15) {
             baseDelaySeconds = 120 + random.nextInt(240);
@@ -162,7 +162,7 @@ public class ResponseTimingService {
         int finalDelay = variance > 0 ? baseDelaySeconds + (random.nextInt(variance * 2) - variance) : baseDelaySeconds;
 
         int maxDelaySeconds = 30 * 60;
-        return Math.min(Math.max(finalDelay, 30), maxDelaySeconds);
+        return Math.min(Math.max(finalDelay, 3), maxDelaySeconds);
     }
 
     private double getTimeOfDayMultiplier(int hour) {
