@@ -97,7 +97,19 @@ public class PPVService {
         long offerCount = ppvOfferRepository.countByFanId(fan.getId());
         boolean hasPurchasedBefore = contentVaultService.hasFanMadeAnyPurchase(fan.getId());
 
+        // First offer: send cheapest real content ($3 L1) instead of text-only teaser
         if (offerCount == 0) {
+            List<VaultMedia> firstMedia = contentVaultService.getMediaForPriceTierPersonalized(
+                fan.getId(), ContentCategory.SOLO, PricingLadderService.P_3_00, List.of(), List.of());
+            if (!firstMedia.isEmpty()) {
+                List<String> mediaIds = firstMedia.stream().map(VaultMedia::getMediaId).toList();
+                String pitch = generatePPVPitchByPrice(PricingLadderService.P_3_00, state, recentMessages, firstMedia.size(), "");
+                sendPPVMessage(chatId, pitch, mediaIds, PricingLadderService.P_3_00, fan.getCreatorId());
+                trackOffer(fan.getId(), firstMedia.size(), ContentCategory.SOLO.name(), PricingLadderService.P_3_00, mediaIds);
+                log.info("Sent first PPV to fan {} with {} media at $3", fan.getId(), firstMedia.size());
+                return;
+            }
+            // Fallback to text teaser if no media available
             sendFreeTeaser(fan, state, chatId, recentMessages);
             return;
         }
