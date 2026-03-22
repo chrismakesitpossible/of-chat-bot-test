@@ -7,6 +7,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 
+import jakarta.annotation.PostConstruct;
 import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Optional;
@@ -29,6 +30,13 @@ public class CreatorService {
 
     @Value("${onlyfans.account.id}")
     private String defaultAccountId;
+
+    /** Ensure the default creator exists on startup (before vault sync runs). */
+    @PostConstruct
+    public void initDefaultCreator() {
+        if (defaultAccountId == null || defaultAccountId.isBlank()) return;
+        getOrCreateCreator(defaultAccountId);
+    }
 
     public Creator getOrCreateCreator(String accountId) {
         // Webhook account_id is the same as creator_id; look up by both to handle existing rows
