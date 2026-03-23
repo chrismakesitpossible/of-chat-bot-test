@@ -91,7 +91,14 @@ public class ResponseTimingService {
                     onlyFansApiService.sendMessage(chatId, message, messageReplyTo, creatorId);
                     log.info("Sent message {} of {} to chat: {}", msgIndex, totalMessages, chatId);
                 } catch (Exception e) {
-                    log.error("Failed to send message", e);
+                    log.error("Failed to send message {} of {} to chat: {} — will retry once in 10s", msgIndex, totalMessages, chatId, e);
+                    try {
+                        Thread.sleep(10_000);
+                        onlyFansApiService.sendMessage(chatId, message, messageReplyTo, creatorId);
+                        log.info("Retry succeeded: sent message {} of {} to chat: {}", msgIndex, totalMessages, chatId);
+                    } catch (Exception retryEx) {
+                        log.error("Retry also failed for message {} of {} to chat: {} — fan got silence", msgIndex, totalMessages, chatId, retryEx);
+                    }
                 } finally {
                     removeAndCleanup(chatId, futures, null);
                 }

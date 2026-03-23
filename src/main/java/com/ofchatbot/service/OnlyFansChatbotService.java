@@ -290,13 +290,27 @@ public class OnlyFansChatbotService {
                 log.error("AI analysis failed — using defaults. Fan: {}", onlyfansUserId, analysisEx);
             }
 
-            String scriptTemplate = scriptEngineService.getScriptTemplate(scriptCategory, state);
-            Map<String, String> frameworkGuidance = scriptEngineService.getFrameworkGuidance(state);
+            String scriptTemplate = null;
+            Map<String, String> frameworkGuidance = null;
+            String conversationHistory = null;
+            try {
+                scriptTemplate = scriptEngineService.getScriptTemplate(scriptCategory, state);
+                frameworkGuidance = scriptEngineService.getFrameworkGuidance(state);
+            } catch (Exception templateEx) {
+                log.error("Script template/framework retrieval failed — using defaults. Fan: {}", onlyfansUserId, templateEx);
+            }
 
-            scriptAnalyticsService.trackScriptUsage(creator.getCreatorId(), scriptCategory, state.getCurrentState());
+            try {
+                scriptAnalyticsService.trackScriptUsage(creator.getCreatorId(), scriptCategory, state.getCurrentState());
+            } catch (Exception trackEx) {
+                log.warn("Script analytics tracking failed (non-critical). Fan: {}", onlyfansUserId, trackEx);
+            }
 
-            String conversationHistory = messageService.getConversationHistory(onlyfansUserId, 10);
-            log.info("Conversation history for fan {}: {}", onlyfansUserId, conversationHistory);
+            try {
+                conversationHistory = messageService.getConversationHistory(onlyfansUserId, 10);
+            } catch (Exception histEx) {
+                log.warn("Failed to fetch conversation history — proceeding without. Fan: {}", onlyfansUserId, histEx);
+            }
             log.info("Batched message text being sent to AI: {}", batchedMessageText);
 
             // Always generate a conversational response — even with purchase intent.
@@ -306,7 +320,7 @@ public class OnlyFansChatbotService {
                 try {
                     response = anthropicService.generateScriptBasedResponse(
                         batchedMessageText,
-                        conversationHistory,
+                        conversationHistory != null ? conversationHistory : "",
                         fan,
                         state,
                         scriptTemplate,
@@ -326,15 +340,19 @@ public class OnlyFansChatbotService {
 
                 responseTimingService.scheduleNaturalResponse(chatId, response, state, fan, batchedMessageText, replyToMessageId, creator.getCreatorId());
 
-                messageService.saveMessage(
-                    creator.getCreatorId(),
-                    onlyfansUserId,
-                    "bot",
-                    response,
-                    LocalDateTime.now().toString(),
-                    "onlyfans",
-                    null
-                );
+                try {
+                    messageService.saveMessage(
+                        creator.getCreatorId(),
+                        onlyfansUserId,
+                        "bot",
+                        response,
+                        LocalDateTime.now().toString(),
+                        "onlyfans",
+                        null
+                    );
+                } catch (Exception saveEx) {
+                    log.error("Failed to save bot response to DB (message was still sent). Fan: {}", onlyfansUserId, saveEx);
+                }
             }
 
             // Parse analysis JSON safely — don't crash if malformed
