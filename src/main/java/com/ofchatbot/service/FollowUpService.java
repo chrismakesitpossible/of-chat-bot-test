@@ -136,21 +136,83 @@ public class FollowUpService {
             try {
                 if (fan.getOnlyfansChatId() == null) continue;
 
-                // Only re-engage if the bot spoke last and the fan went silent
                 List<Message> recentMessages = messageService.getRecentMessages(fan.getContactId(), 10);
                 if (recentMessages.isEmpty()) continue;
 
                 Message lastMessage = recentMessages.get(recentMessages.size() - 1);
                 // If we already sent something within 2 hours (e.g. a previous nudge), skip
                 if (!lastMessage.isFromFan() && lastMessage.getTimestamp().isAfter(twoHoursAgo)) continue;
-                // If fan spoke last and bot never replied — bot dropped the ball, must follow up.
-                // If bot spoke last and fan went quiet — normal re-engagement nudge.
 
-                sendReengagementNudge(fan, recentMessages);
+                if (lastMessage.isFromFan()) {
+                    // Bot dropped the ball — fan spoke last and never got a reply.
+                    // Acknowledge the missed message and respond to it, don't just nudge.
+                    sendDroppedBallRecovery(fan, recentMessages);
+                } else {
+                    // Bot spoke last and fan went quiet — normal re-engagement nudge.
+                    sendReengagementNudge(fan, recentMessages);
+                }
             } catch (Exception e) {
                 log.error("Failed re-engagement for fan {}", fan.getId(), e);
             }
         }
+    }
+
+    /**
+     * Bot dropped the ball — fan sent a message and never got a reply.
+     * Acknowledge the missed message and respond to what they actually said.
+     */
+    private void sendDroppedBallRecovery(Fan fan, List<Message> recentMessages) {
+        String displayName = fan.getOnlyfansDisplayName();
+
+        StringBuilder context = new StringBuilder();
+        int start = Math.max(0, recentMessages.size() - 5);
+        for (int i = start; i < recentMessages.size(); i++) {
+            Message m = recentMessages.get(i);
+            context.append(m.isFromFan() ? "Fan" : "You").append(": ").append(m.getContent()).append("\n");
+        }
+
+        String prompt = String.format(
+            "You missed the fan's last message and are now replying late.\n\n" +
+            "Fan name: %s\n" +
+            "Recent conversation:\n%s\n\n" +
+            "RULES:\n" +
+            "- Briefly apologize for the late reply (\"sorry babe got caught up\", \"omg sorry I just saw this\")\n" +
+            "- Then RESPOND to what the fan actually said in their last message\n" +
+            "- Keep it SHORT (1-2 sentences)\n" +
+            "- 1 emoji max\n" +
+            "- If the fan was asking for content/pics, say you're sending it now\n" +
+            "- NEVER mention robots, bots, or automation\n" +
+            "- Respond with ONLY the message text.",
+            displayName != null ? displayName : "babe",
+            context.toString()
+        );
+
+        String recovery;
+        try {
+            recovery = anthropicService.generateResponse(
+                "You are replying late to a fan's message. Apologize briefly and respond to what they said. Output only the message text. Always write in ENGLISH only.",
+                prompt,
+                null
+            );
+        } catch (Exception e) {
+            log.error("Failed to generate dropped-ball recovery for fan {}", fan.getId(), e);
+            recovery = "sorry babe I just saw this, give me one sec";
+        }
+
+        if (recovery == null || recovery.isBlank()) {
+            recovery = "sorry babe I just saw this, give me one sec";
+        }
+
+        String chatId = fan.getOnlyfansChatId();
+        try {
+            onlyFansApiService.sendMessage(chatId, recovery);
+        } catch (CannotMessageUserException e) {
+            log.warn("Cannot message fan {} for dropped-ball recovery (blocked/restricted)", fan.getId());
+            return;
+        }
+
+        messageService.saveMessage(fan.getCreatorId(), fan.getContactId(), "assistant", recovery, LocalDateTime.now().toString(), "onlyfans");
+        log.info("Sent dropped-ball recovery to fan {} (chat {}): {}", fan.getId(), chatId, recovery);
     }
 
     private void sendReengagementNudge(Fan fan, List<Message> recentMessages) {

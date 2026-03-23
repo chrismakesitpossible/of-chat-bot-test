@@ -599,10 +599,10 @@ public class OnlyFansChatbotService {
     }
 
     private boolean shouldSendPPVOffer(ConversationState state, String scriptCategory, String messageText, boolean explicitPurchaseIntent) {
-        // Explicit "send me content / another one" always allows a PPV offer
-        if (explicitPurchaseIntent) {
-            log.info("Explicit purchase intent detected, overriding PPV restrictions");
-            return true;
+        // Only send PPV when the fan explicitly asks for content.
+        // No proactive/out-of-the-blue PPV sends — fans find that spammy.
+        if (!explicitPurchaseIntent) {
+            return false;
         }
 
         // Decline cooldown: if fan just declined, back off (Issue #4.4)
@@ -618,25 +618,8 @@ public class OnlyFansChatbotService {
             return false;
         }
 
-        if (state.getMessageCount() < 5) {
-            return false;
-        }
-
-        if (scriptCategory.equals("LOCK_SALE") || scriptCategory.equals("PPV_OFFER")) {
-            return true;
-        }
-
-        if (state.getCurrentPhase() != null &&
-            (state.getCurrentPhase().equals("FLIRTY") ||
-             state.getCurrentPhase().equals("SUGGESTIVE") ||
-             state.getCurrentPhase().equals("INTIMATE"))) {
-
-            if (state.getIntensityLevel() != null && state.getIntensityLevel() >= 6) {
-                return true;
-            }
-        }
-
-        return false;
+        log.info("Explicit purchase intent detected, sending PPV offer");
+        return true;
     }
     
     private boolean isMediaRequest(String messageText) {

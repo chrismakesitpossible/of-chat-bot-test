@@ -234,7 +234,14 @@ public class ResponseTimingService {
             try {
                 transactionTemplate.executeWithoutResult(status -> sendPpvTask.run());
             } catch (Exception e) {
-                log.error("Failed to send PPV after purchase-intent delay", e);
+                log.error("Failed to send PPV after purchase-intent delay — will retry once in 15s", e);
+                try {
+                    Thread.sleep(15_000);
+                    transactionTemplate.executeWithoutResult(status -> sendPpvTask.run());
+                    log.info("PPV retry succeeded for chat {}", chatId);
+                } catch (Exception retryEx) {
+                    log.error("PPV retry also failed for chat {} — fan asked for content but got nothing", chatId, retryEx);
+                }
             }
         }, delaySeconds, TimeUnit.SECONDS);
     }
