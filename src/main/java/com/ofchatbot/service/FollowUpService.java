@@ -141,10 +141,10 @@ public class FollowUpService {
                 if (recentMessages.isEmpty()) continue;
 
                 Message lastMessage = recentMessages.get(recentMessages.size() - 1);
-                // If fan spoke last, they might come back on their own
-                if (lastMessage.isFromFan()) continue;
                 // If we already sent something within 2 hours (e.g. a previous nudge), skip
-                if (lastMessage.getTimestamp().isAfter(twoHoursAgo)) continue;
+                if (!lastMessage.isFromFan() && lastMessage.getTimestamp().isAfter(twoHoursAgo)) continue;
+                // If fan spoke last and bot never replied — bot dropped the ball, must follow up.
+                // If bot spoke last and fan went quiet — normal re-engagement nudge.
 
                 sendReengagementNudge(fan, recentMessages);
             } catch (Exception e) {
