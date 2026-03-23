@@ -181,9 +181,9 @@ public class AnthropicService {
             if (response.getBody() != null && !response.getBody().getContent().isEmpty()) {
                 String aiResponse = response.getBody().getContent().get(0).getText();
                 log.info("Successfully generated AI response");
-                return aiResponse;
+                return cleanResponse(aiResponse);
             }
-            
+
             log.warn("Empty response from Anthropic API");
             return "Hey! Thanks for reaching out 😊";
         } catch (Exception e) {
@@ -191,7 +191,7 @@ public class AnthropicService {
             return "Hey! Thanks for reaching out 😊";
         }
     }
-    
+
     public String generateResponse(String currentMessage, String conversationHistory, Fan fan) {
         String prompt = buildOnlyFansPrompt(conversationHistory, currentMessage, fan);
         
@@ -221,7 +221,7 @@ public class AnthropicService {
             if (response.getBody() != null && !response.getBody().getContent().isEmpty()) {
                 String aiResponse = response.getBody().getContent().get(0).getText();
                 log.info("Successfully generated OnlyFans AI response");
-                return aiResponse;
+                return cleanResponse(aiResponse);
             }
             
             log.warn("Empty response from Anthropic API");
@@ -388,7 +388,10 @@ public class AnthropicService {
             "- NEVER mention Instagram, Snapchat, Telegram, Twitter, or any other platform. Everything stays on OnlyFans.\n" +
             "- If fans ask about socials or other platforms — keep them here: \"everything's right here babe :)\"\n" +
             "- When fans ask \"what do you look like\" or \"can i see you\" — tell them to scroll your page, your pics are right there. Be playful (\"babe scroll down haha my pics are all over my page\").\n" +
-            "- \"I wanna see your ass/body/tits\" = they want content. Tease and offer to send, don't redirect to your page.\n",
+            "- \"I wanna see your ass/body/tits\" = they want content. Tease and offer to send, don't redirect to your page.\n" +
+            "- NEVER make up or reference conversations that didn't happen. Only respond to what the fan actually said in this conversation. Do NOT say things like \"you asked about X\" or \"i told you the price\" unless it literally appears in the conversation history above.\n" +
+            "- NEVER reference internal system names like gym, shower, script, vault, level, tier, or any content system terminology. These are internal — the fan has no idea they exist.\n" +
+            "- For simple greetings like \"hi\", \"hey\", \"hello\", \"what's up\" — reply with ONE short message (3-8 words). Do not write multiple paragraphs or reference past conversations. Just say hi back warmly.\n",
             creatorName
         );
     }
@@ -791,7 +794,7 @@ public class AnthropicService {
             if (response.getBody() != null && !response.getBody().getContent().isEmpty()) {
                 String aiResponse = response.getBody().getContent().get(0).getText();
                 log.info("Successfully generated PPV thank you message");
-                return aiResponse;
+                return cleanResponse(aiResponse);
             }
             
             log.warn("Empty response from Anthropic API");
@@ -881,9 +884,9 @@ public class AnthropicService {
             if (response.getBody() != null && !response.getBody().getContent().isEmpty()) {
                 String aiResponse = response.getBody().getContent().get(0).getText();
                 log.info("Successfully generated AI response");
-                return aiResponse;
+                return cleanResponse(aiResponse);
             }
-            
+
             log.warn("Empty response from Anthropic API");
             return "Hey! Thanks for reaching out 😊";
         } catch (Exception e) {
@@ -891,7 +894,7 @@ public class AnthropicService {
             return "Hey! Thanks for reaching out 😊";
         }
     }
-    
+
     private Map<String, Object> createDefaultAnalysis() {
         Map<String, Object> analysis = new HashMap<>();
         analysis.put("is_unavailable", false);

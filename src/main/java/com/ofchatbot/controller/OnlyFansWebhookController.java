@@ -14,6 +14,7 @@ import org.springframework.web.bind.annotation.*;
 
 import java.util.Map;
 import java.util.Optional;
+import java.util.regex.Pattern;
 
 @RestController
 @RequestMapping("/api/webhook/onlyfans")
@@ -61,6 +62,12 @@ public class OnlyFansWebhookController {
                             // Skip webhooks for messages sent by the creator/bot account
                             if (fanId.equals(accountId)) {
                                 log.debug("Ignoring webhook for creator-sent message (account {})", accountId);
+                                break;
+                            }
+                            // Skip spam/promo messages from other creators
+                            String msgText = webhook.getPayload().getText();
+                            if (isSpamMessage(msgText)) {
+                                log.info("Ignoring spam message from fan {} — not processing", fanId);
                                 break;
                             }
                             messageBatchingService.handleIncomingMessage(fanId, () -> {
@@ -340,6 +347,35 @@ public class OnlyFansWebhookController {
         } catch (Exception e) {
             log.error("Error handling creator-sent message for human takeover", e);
         }
+    }
+
+    // ── Spam detection ────────────────────────────────────────────────
+
+    /** Multiple onlyfans.com/ links = another creator spamming promo */
+    private static final Pattern OF_LINK = Pattern.compile("onlyfans\\.com/", Pattern.CASE_INSENSITIVE);
+    /** ALL-CAPS words (4+ chars) — spam messages are usually screaming promo text */
+    private static final Pattern CAPS_WORD = Pattern.compile("\\b[A-Z]{4,}\\b");
+
+    private boolean isSpamMessage(String text) {
+        if (text == null || text.isBlank()) return false;
+
+        // 2+ onlyfans.com/ links = promo spam from another creator
+        long ofLinkCount = OF_LINK.matcher(text).results().count();
+        if (ofLinkCount >= 2) {
+            log.info("Spam detected: {} onlyfans.com links in message", ofLinkCount);
+            return true;
+        }
+
+        // 1 OF link + mostly ALL CAPS = promo spam (e.g. "HOTT FREE SLUTS onlyfans.com/xxx")
+        if (ofLinkCount >= 1) {
+            long capsWords = CAPS_WORD.matcher(text).results().count();
+            if (capsWords >= 3) {
+                log.info("Spam detected: OF link + {} ALL-CAPS words", capsWords);
+                return true;
+            }
+        }
+
+        return false;
     }
 
     @GetMapping("/health")
