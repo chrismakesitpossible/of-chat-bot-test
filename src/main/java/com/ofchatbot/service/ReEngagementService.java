@@ -5,6 +5,7 @@ import com.ofchatbot.entity.ConversationState;
 import com.ofchatbot.entity.Fan;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
 
@@ -25,9 +26,16 @@ public class ReEngagementService {
     private final OnlyFansApiService onlyFansApiService;
     private final MessageService messageService;
     private final ErrorLogService errorLogService;
-    
+
+    @Value("${bot.enabled:false}")
+    private boolean botEnabled;
+
     @Scheduled(cron = "0 0 10 * * *")
     public void processInactiveFans() {
+        if (!botEnabled) {
+            log.info("Bot disabled (BOT_ENABLED!=true) — skipping re-engagement job");
+            return;
+        }
         log.info("Starting re-engagement check for inactive fans");
         
         try {

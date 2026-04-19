@@ -7,6 +7,7 @@ import com.ofchatbot.repository.FanRepository;
 import com.ofchatbot.repository.ConversationRepository;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
 
@@ -25,10 +26,14 @@ public class FollowUpService {
     private final OnlyFansApiService onlyFansApiService;
     private final MessageService messageService;
 
+    @Value("${bot.enabled:false}")
+    private boolean botEnabled;
+
     // ── PPV follow-up (5 min after offer) ───────────────────────────────
 
     @Scheduled(fixedRate = 60000)
     public void processFollowUps() {
+        if (!botEnabled) return;
         LocalDateTime now = LocalDateTime.now();
         LocalDateTime fiveMinutesAgo = now.minusMinutes(5);
         List<PPVOffer> offersNeedingFollowUp = ppvOfferRepository.findOffersNeedingFollowUp(fiveMinutesAgo);
@@ -125,6 +130,7 @@ public class FollowUpService {
 
     @Scheduled(fixedRate = 1800000) // every 30 minutes
     public void processReengagement() {
+        if (!botEnabled) return;
         LocalDateTime now = LocalDateTime.now();
         LocalDateTime twoHoursAgo = now.minusHours(2);
         LocalDateTime twentyFourHoursAgo = now.minusHours(24);

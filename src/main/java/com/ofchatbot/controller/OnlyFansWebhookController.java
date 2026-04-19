@@ -9,6 +9,7 @@ import com.ofchatbot.service.*;
 import com.ofchatbot.exception.SendToSelfException;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
@@ -36,8 +37,15 @@ public class OnlyFansWebhookController {
     private final PPVLadderService ppvLadderService;
     private final CustomRequestService customRequestService;
 
+    @Value("${bot.enabled:false}")
+    private boolean botEnabled;
+
     @PostMapping
     public ResponseEntity<Map<String, String>> handleOnlyFansWebhook(@RequestBody OnlyFansWebhookPayload webhook) {
+        if (!botEnabled) {
+            log.info("Bot disabled (BOT_ENABLED!=true) — ack webhook {} without processing", webhook.getEvent());
+            return ResponseEntity.ok(Map.of("status", "bot_disabled"));
+        }
         try {
             String event = webhook.getEvent();
             String accountId = webhook.getAccount_id();
